@@ -44,6 +44,13 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libgui
 
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_STATIC_LIBRARIES += \
+    libsurfaceflinger-mtk
+LOCAL_SHARED_LIBRARIES += \
+    libskia
+endif
+
 # this is only needed for DDMS debugging
 LOCAL_SHARED_LIBRARIES += libdvm libandroid_runtime
 
@@ -59,6 +66,13 @@ endif
 
 LOCAL_C_INCLUDES := \
 	$(call include-path-for, corecg graphics)
+
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_C_INCLUDES += \
+	external/skia/include/core \
+	external/skia/include/images \
+    $(WIKO_COMMON_INCLUDE_PATH)
+endif
 
 LOCAL_C_INCLUDES += hardware/libhardware/modules/gralloc
 

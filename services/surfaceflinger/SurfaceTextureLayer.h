@@ -24,6 +24,9 @@
 #include <utils/Errors.h>
 #include <gui/SurfaceTexture.h>
 
+#ifdef MTK_HARDWARE
+#include "DisplayHardware/HWComposer.h"
+#endif//MTK_HARDWARE
 namespace android {
 // ---------------------------------------------------------------------------
 
@@ -57,6 +60,24 @@ protected:
 
     virtual status_t connect(int api,
             uint32_t* outWidth, uint32_t* outHeight, uint32_t* outTransform);
+
+#ifdef MTK_HARDWARE
+public:
+    virtual status_t convertToAuxSlot(bool isForce) {
+        return (true == isForce) ? SurfaceTexture::convertToAuxSlot(true) : -1;
+    }
+
+private:
+    bool mLogBuffer;        // to switch debug log
+
+private:
+    virtual status_t bypassGL();
+
+    HWComposer *mHWC;
+
+public:
+    void setHWC(HWComposer *hwc) { mHWC = hwc; }
+#endif//MTK_HARDWARE
 };
 
 // ---------------------------------------------------------------------------

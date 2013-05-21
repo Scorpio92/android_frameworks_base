@@ -38,6 +38,10 @@ struct layer_state_t {
             x(0), y(0), z(0), w(0), h(0),
             alpha(0), tint(0), flags(0), mask(0),
             reserved(0)
+#if 0//MTK_HARDWARE
+            ,
+            flagsEx(0x00000000), maskEx(0x00000000)
+#endif//MTK_HARDWARE
     {
         matrix.dsdx = matrix.dtdy = 1.0f;
         matrix.dsdy = matrix.dtdx = 0.0f;
@@ -65,6 +69,10 @@ struct layer_state_t {
             uint8_t         mask;
             uint8_t         reserved;
             matrix22_t      matrix;
+#if 0//MTK_HARDWARE
+            uint32_t        flagsEx;
+            uint32_t        maskEx;
+#endif//MTK_HARDWARE
             // non POD must be last. see write/read
             Region          transparentRegion;
 };

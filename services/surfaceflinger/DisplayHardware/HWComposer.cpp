@@ -40,7 +40,24 @@
 
 namespace android {
 // ---------------------------------------------------------------------------
-
+#if 0//def MTK_HARDWARE
+void freeList(hwc_layer_list* list)
+{    
+    if (list != NULL)
+    {
+        LOGD("free list, numHwLayers=%d", list->numHwLayers);
+        size_t count = list->numHwLayers;
+        for (size_t i=0 ; i<count ; i++) {
+            hwc_layer& l(list->hwLayers[i]);
+            if (l.graphicBuffer != NULL)
+            {                
+                l.graphicBuffer.clear();
+            }
+        }
+    }
+    free(list);
+}
+#endif//MTK_HARDWARE
 HWComposer::HWComposer(const sp<SurfaceFlinger>& flinger)
     : mFlinger(flinger),
       mModule(0), mHwc(0), mList(0), mCapacity(0),
@@ -64,7 +81,11 @@ HWComposer::HWComposer(const sp<SurfaceFlinger>& flinger)
 }
 
 HWComposer::~HWComposer() {
+#if 1//ndef MTK_HARDWARE
     free(mList);
+#else
+    freeList(mList);
+#endif//MTK_HARDWARE
     if (mHwc) {
         hwc_close(mHwc);
     }
@@ -90,10 +111,18 @@ void HWComposer::setFrameBuffer(EGLDisplay dpy, EGLSurface sur) {
 status_t HWComposer::createWorkList(size_t numLayers) {
     if (mHwc) {
         if (!mList || mCapacity < numLayers) {
+#if 1//ndef MTK_HARDWARE
             free(mList);
+#else
+            freeList(mList);
+#endif//MTK_HARDWARE
             size_t size = sizeof(hwc_layer_list) + numLayers*sizeof(hwc_layer_t);
             mList = (hwc_layer_list_t*)malloc(size);
+#if 1//ndef MTK_HARDWARE
             memset(mList, 0, size);
+#else
+            memset(mList, 0x00, size);
+#endif//MTK_HARDWARE
             mCapacity = numLayers;
         }
         mList->flags = HWC_GEOMETRY_CHANGED;
@@ -107,10 +136,21 @@ status_t HWComposer::prepare() const {
     // Reset the Skip composition flag
     mList->flags &= ~HWC_SKIP_COMPOSITION;
 #endif
+#ifdef MTK_HARDWARE
+    if (mList && mFlinger->isLayerScreenShotVisible()) {
+        mList->flags |= HWC_LAYERSCREENSHOT_EXIST;
+    }
+
+    //mList->composingOrientation = mFlinger->mDrawingState.composingOrientation;
+    //mList->composingPhase = mFlinger->mDrawingState.composingPhase;
+#endif//MTK_HARDWARE
     int err = mHwc->prepare(mHwc, mList);
     if (err == NO_ERROR) {
         size_t numOVLayers = 0;
         size_t numFBLayers = 0;
+#ifdef MTK_HARDWARE
+        size_t numEXLayers = 0;
+#endif//MTK_HARDWARE
         size_t count = mList->numHwLayers;
         for (size_t i=0 ; i<count ; i++) {
             hwc_layer& l(mList->hwLayers[i]);
@@ -124,6 +164,11 @@ status_t HWComposer::prepare() const {
                 case HWC_FRAMEBUFFER:
                     numFBLayers++;
                     break;
+#ifdef MTK_HARDWARE
+                case HWC_OVERLAY_EX:
+                    numEXLayers++;
+                    break;
+#endif//MTK_HARDWARE
 #ifdef QCOM_HARDWARE
                 default:
                     if(isUpdatingFB((HWCCompositionType)l.compositionType))
@@ -134,6 +179,9 @@ status_t HWComposer::prepare() const {
         }
         mNumOVLayers = numOVLayers;
         mNumFBLayers = numFBLayers;
+#ifdef MTK_HARDWARE
+        mNumEXLayers = numEXLayers;
+#endif//MTK_HARDWARE
     }
     return (status_t)err;
 }
@@ -144,14 +192,27 @@ size_t HWComposer::getLayerCount(int type) const {
             return mNumOVLayers;
         case HWC_FRAMEBUFFER:
             return mNumFBLayers;
+#ifdef MTK_HARDWARE
+        case HWC_OVERLAY_EX:
+            return mNumEXLayers;
+#endif//MTK_HARDWARE
     }
     return 0;
 }
 
 status_t HWComposer::commit() const {
+#ifdef MTK_HARDWARE
+    if (mList && mFlinger->getAndClearLayersSwapRequired()) {
+        mList->flags |= HWC_SWAP_REQUIRED;
+    }
+#endif//MTK_HARDWARE
     int err = mHwc->set(mHwc, mDpy, mSur, mList);
     if (mList) {
+#ifndef MTK_HARDWARE
         mList->flags &= ~HWC_GEOMETRY_CHANGED;
+#else
+        mList->flags &= ~(HWC_GEOMETRY_CHANGED | HWC_SWAP_REQUIRED | HWC_LAYERSCREENSHOT_EXIST);
+#endif//MTK_HARDWARE
     }
     return (status_t)err;
 }
@@ -166,7 +227,11 @@ status_t HWComposer::release() const {
 
 status_t HWComposer::disable() {
     if (mHwc) {
+#if 1//ndef MTK_HARDWARE
         free(mList);
+#else
+        freeList(mList);
+#endif//MTK_HARDWARE
         mList = NULL;
         int err = mHwc->prepare(mHwc, NULL);
         return (status_t)err;
@@ -204,13 +269,21 @@ void HWComposer::dump(String8& result, char* buffer, size_t SIZE,
             const hwc_layer_t& l(mList->hwLayers[i]);
             const sp<LayerBase> layer(visibleLayersSortedByZ[i]);
             int32_t format = -1;
+#ifdef MTK_HARDWARE
+            intptr_t handle = NULL;
+#endif//MTK_HARDWARE
             if (layer->getLayer() != NULL) {
                 const sp<GraphicBuffer>& buffer(layer->getLayer()->getActiveBuffer());
                 if (buffer != NULL) {
                     format = buffer->getPixelFormat();
+#ifdef MTK_HARDWARE
+                    handle = intptr_t(buffer->handle);
+#endif//MTK_HARDWARE
                 }
             }
             snprintf(buffer, SIZE,
+
+#ifndef MTK_HARDWARE
                     " %8s | %08x | %08x | %08x | %02x | %05x | %08x | [%5d,%5d,%5d,%5d] | [%5d,%5d,%5d,%5d] %s\n",
 #ifdef QCOM_HARDWARE
                     l.compositionType ? (l.compositionType == HWC_OVERLAY ? "OVERLAY" : "COPYBIT") : "FB",
@@ -219,6 +292,11 @@ void HWComposer::dump(String8& result, char* buffer, size_t SIZE,
                     l.compositionType ? "OVERLAY" : "FB",
                     intptr_t(l.handle), l.hints, l.flags, l.transform, l.blending, format,
 #endif
+#else
+                    " %4s | %08x | %08x | %08x | %02x | %05x | %08x | [%5d,%5d,%5d,%5d] | [%5d,%5d,%5d,%5d] | %s\n",
+                    compositionTypeName[l.compositionType],
+                    handle, l.hints, l.flags, l.transform, l.blending, format,
+#endif//MTK_HARDWARE
                     l.sourceCrop.left, l.sourceCrop.top, l.sourceCrop.right, l.sourceCrop.bottom,
                     l.displayFrame.left, l.displayFrame.top, l.displayFrame.right, l.displayFrame.bottom,
                     layer->getName().string());
@@ -246,6 +324,13 @@ return ret;
 }
 
 #endif
+
+#ifdef MTK_HARDWARE
+status_t HWComposer::bypassGL()
+{
+    return mHwc.opengl_bypass(); 
+}
+#endif//MTK_HARDWARE
 
 // ---------------------------------------------------------------------------
 }; // namespace android

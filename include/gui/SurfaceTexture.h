@@ -314,7 +314,12 @@ private:
               mScalingMode(NATIVE_WINDOW_SCALING_MODE_FREEZE),
               mTimestamp(0),
               mFrameNumber(0),
-              mFence(EGL_NO_SYNC_KHR) {
+              mFence(EGL_NO_SYNC_KHR) 
+#ifdef MTK_HARDWARE
+              ,
+              mMva(NULL)
+#endif//MTK_HARDWARE
+        {
             mCrop.makeInvalid();
         }
 
@@ -392,6 +397,9 @@ private:
         // to EGL_NO_SYNC_KHR when the buffer is created and (optionally, based
         // on a compile-time option) set to a new sync object in updateTexImage.
         EGLSyncKHR mFence;
+#ifdef MTK_HARDWARE
+        void *mMva;
+#endif//MTK_HARDWARE
     };
 
     // mSlots is the array of buffer slots that must be mirrored on the client
@@ -582,10 +590,44 @@ private:
          int height;
          int format;
      };
- 
+
      BufferInfo mNextBufferInfo;
 #endif
 
+#ifdef MTK_HARDWARE
+private:
+    bool mIsAuxSlotConversionRequired;
+    bool mIsAuxSlotDirty;
+    BufferSlot mAuxSlot[2];
+    BufferSlot *mBackAuxSlot;
+    BufferSlot *mFrontAuxSlot;
+    status_t   freeAuxSlot(BufferSlot &bs);
+
+    // for MVA register/unregister works
+    enum MVA_TYPE {
+        MVA_TYPE_INPUT = 0,
+        MVA_TYPE_OUTPUT,
+    };
+    status_t registerMva(BufferSlot &bs, MVA_TYPE type);
+    status_t unregisterMva(BufferSlot &bs);
+
+public:
+    int getConnectedApi() const { return mConnectedApi; }
+
+    // check condition if match conversion condition
+    bool isFormatNeedConversion() const {
+        return HAL_PIXEL_FORMAT_I420 == mPixelFormat;
+    }
+    bool isAuxSlotConversionRequired() const { return mIsAuxSlotConversionRequired; }
+    bool isAuxSlotDirty() const { return mIsAuxSlotDirty; }
+    status_t bindToAuxSlot();
+    virtual status_t convertToAuxSlot(bool isForce);
+    status_t bindToAuxSlotLocked();
+    status_t convertToAuxSlotLocked(bool isForce);
+    Mutex mMdpMutex;
+private:
+    bool mDrawLine_Aux;
+#endif//MTK_HARDWARE
 };
 
 // ----------------------------------------------------------------------------

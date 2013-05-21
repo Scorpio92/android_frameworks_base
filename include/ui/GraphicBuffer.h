@@ -155,6 +155,11 @@ private:
     // If we're wrapping another buffer then this reference will make sure it
     // doesn't get freed.
     sp<ANativeWindowBuffer> mWrappedBuffer;
+#ifdef MTK_HARDWARE
+private:
+    status_t mapBuffer();
+    status_t unmapBuffer();
+#endif//MTK_HARDWARE
 };
 
 }; // namespace android

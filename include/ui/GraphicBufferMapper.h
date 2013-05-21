@@ -24,6 +24,10 @@
 
 #include <hardware/gralloc.h>
 
+#ifdef MTK_HARDWARE
+#include <utils/KeyedVector.h>
+#include <ui/PixelFormat.h>
+#endif//MTK_HARDWARE
 
 struct gralloc_module_t;
 
@@ -32,6 +36,9 @@ namespace android {
 // ---------------------------------------------------------------------------
 
 class Rect;
+#ifdef MTK_HARDWARE
+class String8;
+#endif//MTK_HARDWARE
 
 class GraphicBufferMapper : public Singleton<GraphicBufferMapper>
 {
@@ -52,12 +59,34 @@ public:
 #endif
 
     // dumps information about the mapping of this handle
+#ifndef MTK_HARDWARE
     void dump(buffer_handle_t handle);
+#else
+    void dump(String8& result) const;
+#endif//MTK_HARDWARE
 
 private:
     friend class Singleton<GraphicBufferMapper>;
     GraphicBufferMapper();
     gralloc_module_t const *mAllocMod;
+#ifdef MTK_HARDWARE
+    struct reg_rec_t {
+        uint32_t w;
+        uint32_t h;
+        uint32_t s;
+        PixelFormat format;
+        uint32_t usage;
+        size_t size;
+    };
+    
+    static Mutex sLock;
+    static KeyedVector<buffer_handle_t, reg_rec_t> sRegList;
+    void dumpRegistrationToSystemLog();
+
+public:
+    status_t registerBuffer(buffer_handle_t handle, 
+        int w, int h, int s, int f, int usage);
+#endif//MTK_HARDWARE
 };
 
 // ---------------------------------------------------------------------------

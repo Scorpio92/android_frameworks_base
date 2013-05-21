@@ -4,6 +4,13 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= app-linux.cpp demo.c.arm
 LOCAL_SHARED_LIBRARIES := libEGL libGLESv1_CM libui
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_SHARED_LIBRARIES += libcutils \
+						  libutils \
+						  libsurfaceflinger \
+						  libandroid \
+						  libgui
+endif
 LOCAL_MODULE:= angeles
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)

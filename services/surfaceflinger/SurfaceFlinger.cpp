@@ -61,6 +61,16 @@
 #include <qcom_ui.h>
 #endif
 
+#ifdef MTK_HARDWARE
+#include <private/android_filesystem_config.h>
+#include <linux/rtpm_prio.h>
+#include <sys/prctl.h>
+
+#include <SkImageEncoder.h>
+#include <SkBitmap.h>
+#include <SkCanvas.h>
+#include <SkMatrix.h>
+#endif//MTK_HARDWARE
 /* ideally AID_GRAPHICS would be in a semi-public header
  * or there would be a way to map a user/group name to its id
  */
@@ -85,7 +95,55 @@ const String16 sReadFramebuffer("android.permission.READ_FRAME_BUFFER");
 const String16 sDump("android.permission.DUMP");
 
 // ---------------------------------------------------------------------------
+#ifdef MTK_HARDWARE
+SurfaceFlinger::projectConfig_t SurfaceFlinger::sMtkConfig = { false, false, false };
 
+bool isEnableBootAnim() {
+    int fd;
+    size_t s;
+    char boot_mode;
+    char propVal[PROPERTY_VALUE_MAX];
+    char boot_reason = '0'; // 0: normal boot, 1: alarm boot
+
+
+    property_get("sys.ipod.counter", propVal, "0");
+    int firstBoot = atoi(propVal); // 0: first boot
+    LOGI("boot type = %d\n",firstBoot);
+    if (0 != firstBoot) {
+        return true;
+    }
+
+    /*
+     * The sys.boot.reason will be updated by boot_logo_updater, however,
+     * the init can't set the system properity before surface flinger is initialized.
+     * Determine the boot reason by check boot path and boot package information directly
+     */
+
+    fd = open("/sys/class/BOOT/BOOT/boot/boot_mode", O_RDONLY);
+    if (fd < 0) {
+        LOGE("fail to open: boot path %s", strerror(errno));
+        boot_reason = '0';
+    } else {
+        s = read(fd, (void *)&boot_mode, sizeof(boot_mode));
+        close(fd);
+
+        if(s <= 0) {
+            LOGE("can't read the boot_mode");
+        } else {
+            if ( boot_mode == '7' ) {
+                boot_reason = '1';
+            }
+        }
+    }
+
+    if ('1' == boot_reason) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+#endif//MTK_HARDWARE
 SurfaceFlinger::SurfaceFlinger()
     :   BnSurfaceComposer(), Thread(false),
         mTransactionFlags(0),
@@ -94,7 +152,14 @@ SurfaceFlinger::SurfaceFlinger()
         mBootTime(systemTime()),
         mVisibleRegionsDirty(false),
         mHwWorkListDirty(false),
+#ifdef MTK_HARDWARE
+        mFreezeDisplay(false),
+        mNeedUpdateFreezeDisplayState(false),
+#endif//MTK_HARDWARE
         mElectronBeamAnimationMode(0),
+#ifdef MTK_HARDWARE
+        mLayerScreenShotVisible(false),
+#endif//MTK_HARDWARE
         mDebugRegion(0),
         mDebugBackground(0),
         mDebugDDMS(0),
@@ -111,9 +176,16 @@ SurfaceFlinger::SurfaceFlinger()
 #ifdef QCOM_HARDWARE
         mCanSkipComposition(false),
 #endif
+#ifdef MTK_HARDWARE
+        mBootAnimationEnabled(true),
+#endif//MTK_HARDWARE
         mConsoleSignals(0),
         mSecureFrameBuffer(0),
+#ifndef MTK_HARDWARE
         mUseDithering(false)
+#else
+        mLayersSwapRequired(false)
+#endif//MTK_HARDWARE
 {
     init();
 }
@@ -128,14 +200,39 @@ void SurfaceFlinger::init()
     property_get("debug.sf.showupdates", value, "0");
     mDebugRegion = atoi(value);
 
+#ifdef MTK_HARDWARE
+    mLayersSwapRequired = mDebugRegion;
+#endif//MTK_HARDWARE
+
     property_get("debug.sf.showbackground", value, "0");
     mDebugBackground = atoi(value);
 
     property_get("debug.sf.ddms", value, "0");
     mDebugDDMS = atoi(value);
 
+#ifndef MTK_HARDWARE
     property_get("persist.sys.use_dithering", value, "0");
     mUseDithering = atoi(value) == 1;
+#endif//MTK_HARDWARE
+
+#ifdef MTK_HARDWARE
+    property_get("debug.sf.busyswap", value, "0");
+    mBusySwap = atoi(value);
+    property_get("debug.sf.log_repaint", value, "0");
+    mLogRepaint = atoi(value);
+    property_get("debug.sf.slowmotion", value, "0");
+    mDelayTime = atoi(value);
+    property_get("debug.sf.lineg3d", value, "0");
+    mDrawLine_G3D = atoi(value);
+    property_get("debug.sf.lineaux", value, "0");
+    mDrawLine_Aux = atoi(value);
+    property_get("debug.sf.liness", value, "0");
+    mDrawLine_ScreenShot = atoi(value);
+    property_get("debug.sf.lineov", value, "0");
+    mDrawLine_Overlay = atoi(value);
+    property_get("debug.sf.debugex", value, "0");
+    mDebugOEX = atoi(value);
+#endif//MTK_HARDWARE
 
     if (mDebugDDMS) {
         DdmConnection::start(getServiceName());
@@ -144,7 +241,9 @@ void SurfaceFlinger::init()
     LOGI_IF(mDebugRegion,       "showupdates enabled");
     LOGI_IF(mDebugBackground,   "showbackground enabled");
     LOGI_IF(mDebugDDMS,         "DDMS debugging enabled");
+#ifndef MTK_HARDWARE
     LOGI_IF(mUseDithering,      "use dithering");
+#endif//MTK_HARDWARE
 }
 
 SurfaceFlinger::~SurfaceFlinger()
@@ -186,6 +285,49 @@ GraphicPlane& SurfaceFlinger::graphicPlane(int dpy)
     return const_cast<GraphicPlane&>(
         const_cast<SurfaceFlinger const *>(this)->graphicPlane(dpy));
 }
+#ifdef MTK_HARDWARE
+static void bootProf(int start) {
+    int fd;
+    int fd_cputime, fd_nand;
+    int ret;
+    char buf[64];
+
+    fd = open("/proc/bootprof", O_RDWR);
+    fd_cputime = open("/proc/mtprof/cputime", O_RDWR);
+    fd_nand = open("/proc/driver/nand", O_RDWR);
+
+    if (fd == -1) return;
+
+    if (1 == start) {
+        strcpy(buf,"BOOT_Animation:START");
+        if (fd > 0) {
+            write(fd, buf, 32);
+            close(fd);
+        }
+        if (fd_cputime > 0) {
+            write(fd_cputime, "1", 1);
+            close(fd_cputime);
+        }
+    } else {
+        strcpy(buf, "BOOT_Animation:END");
+        if (fd > 0) {
+            write(fd, buf, 32);
+            write(fd, "0", 1);    //end of bootprof
+            close(fd);
+        }
+        if (fd_cputime > 0) {
+            write(fd_cputime, "0", 1);
+            close(fd_cputime);
+        }
+        if (fd_nand > 0) {
+            write(fd_nand, "I1", 2);
+            close(fd_nand);
+        }
+    }
+}
+
+
+#endif//MTK_HARDWARE
 
 void SurfaceFlinger::bootFinished()
 {
@@ -203,6 +345,9 @@ void SurfaceFlinger::bootFinished()
 
     // stop boot animation
     property_set("ctl.stop", "bootanim");
+#ifdef MTK_HARDWARE
+    bootProf(0);
+#endif//MTK_HARDWARE
 }
 
 void SurfaceFlinger::binderDied(const wp<IBinder>& who)
@@ -233,6 +378,11 @@ status_t SurfaceFlinger::readyToRun()
     LOGI(   "SurfaceFlinger's main thread ready to run. "
             "Initializing graphics H/W...");
 
+#ifdef MTK_HARDWARE
+    sched_param sched_p;
+    sched_getparam(0, &sched_p);
+    sched_p.sched_priority = RTPM_PRIO_SURFACEFLINGER;      // RR 84
+#endif//MTK_HARDWARE
     // we only support one display currently
     int dpy = 0;
 
@@ -321,7 +471,20 @@ status_t SurfaceFlinger::readyToRun()
      */
 
     // start boot animation
+#ifndef MTK_HARDWARE
     property_set("ctl.start", "bootanim");
+#else
+    mBootAnimationEnabled = isEnableBootAnim();
+    LOG(LOG_INFO, "boot", "mBootAnimationEnabled = %d", mBootAnimationEnabled);
+    if (true == mBootAnimationEnabled) {
+        // start boot animation here
+        property_set("ctl.start", "bootanim");
+        bootProf(1);
+    } else {
+        LOGI("[SurfaceFlinger] skip boot animation!");
+    }
+
+#endif//MTK_HARDWARE
 
     return NO_ERROR;
 }
@@ -454,6 +617,15 @@ bool SurfaceFlinger::threadLoop()
 
     const DisplayHardware& hw(graphicPlane(0).displayHardware());
     if (LIKELY(hw.canDraw())) {
+#ifdef MTK_HARDWARE
+        if (NULL != mWatchDog.get())
+            mWatchDog->markStartTransactionTime();     
+
+        if (mDelayTime)
+        {
+            usleep(1000*mDelayTime);
+        }
+#endif//MTK_HARDWARE
         // repaint the framebuffer (if needed)
 
         const int index = hw.getCurrentBufferIndex();
@@ -485,6 +657,10 @@ bool SurfaceFlinger::threadLoop()
 #endif
 
         logger.log(GraphicLog::SF_REPAINT_DONE, index);
+#ifdef MTK_HARDWARE
+        if (NULL != mWatchDog.get())
+            mWatchDog->unmarkStartTransactionTime();
+#endif//MTK_HARDWARE
     } else {
         // pretend we did the post
 #ifndef STE_HARDWARE
@@ -538,6 +714,9 @@ void SurfaceFlinger::handleConsoleEvents()
 #ifdef QCOM_HDMI_OUT
         updateHwcExternalDisplay(mExtDispOutput);
 #endif
+#ifdef MTK_HARDWARE
+        SurfaceFlinger::turnElectronBeamOn(mElectronBeamAnimationMode);
+#endif//MTK_HARDWARE
     }
 
     if (what & eConsoleReleased) {
@@ -623,7 +802,16 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
 
             mVisibleRegionsDirty = true;
             mDirtyRegion.set(hw.bounds());
+#ifdef MTK_HARDWARE
+            mFreezeDisplay = true;
+#endif//MTK_HARDWARE
         }
+#ifdef MTK_HARDWARE
+        if (mNeedUpdateFreezeDisplayState) {
+            mFreezeDisplay = mCurrentState.freezeDisplay;
+			mNeedUpdateFreezeDisplayState = false;
+        }
+#endif//MTK_HARDWARE
 
         if (currentLayers.size() > mDrawingState.layersSortedByZ.size()) {
             // layers have been added
@@ -634,6 +822,9 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
         // we need to update the regions they're exposing.
         if (mLayersRemoved) {
             mLayersRemoved = false;
+#ifdef MTK_HARDWARE
+            mLayersSwapRequired = true;
+#endif//MTK_HARDWARE
             mVisibleRegionsDirty = true;
             const LayerVector& previousLayers(mDrawingState.layersSortedByZ);
             const size_t count = previousLayers.size();
@@ -724,6 +915,9 @@ void SurfaceFlinger::computeVisibleRegions(
         visibleRegion.subtractSelf(aboveOpaqueLayers);
 
         // compute this layer's dirty region
+#ifdef MTK_HARDWARE
+        mLayersSwapRequired |= layer->contentDirty;
+#endif//MTK_HARDWARE
         if (layer->contentDirty) {
             // we need to invalidate the whole region
             dirty = visibleRegion;
@@ -793,7 +987,23 @@ void SurfaceFlinger::commitTransaction()
     mTransationPending = false;
     mTransactionCV.broadcast();
 }
+#ifdef MTK_HARDWARE
+void SurfaceFlinger::checkLayerScreenShotVisibility() const {
+    const Vector< sp<LayerBase> >& currentLayers(mVisibleLayersSortedByZ);
+    const size_t count = currentLayers.size();
 
+    mLayerScreenShotVisible = false;
+    for (size_t i = 0; i < count; i++) {
+        if (0 == strcmp(currentLayers[i]->getTypeId(), "LayerScreenshot")) {
+            //XLOGI("[%s] LayerScreenshot is visible", __func__);
+            mLayerScreenShotVisible = true;
+            return;
+        }
+    }
+}
+
+
+#endif//MTK_HARDWARE
 void SurfaceFlinger::handlePageFlip()
 {
     bool visibleRegions = mVisibleRegionsDirty;
@@ -820,6 +1030,9 @@ void SurfaceFlinger::handlePageFlip()
             mWormholeRegion = screenRegion.subtract(opaqueRegion);
             mVisibleRegionsDirty = false;
             invalidateHwcGeometry();
+#ifdef MTK_HARDWARE
+            checkLayerScreenShotVisibility();
+#endif//MTK_HARDWARE
         }
 
     unlockPageFlip(currentLayers);
@@ -878,6 +1091,9 @@ void SurfaceFlinger::handleWorkList()
 
 void SurfaceFlinger::handleRepaint()
 {
+#ifdef MTK_HARDWARE
+    graphicPlane(0).displayHardware().makeCurrent();
+#endif//MTK_HARDWARE
     // compute the invalid region
     mSwapRegion.orSelf(mDirtyRegion);
 
@@ -1007,6 +1223,14 @@ void SurfaceFlinger::setupHardwareComposer(Region& dirtyInOut)
      * Check if GL will be used
      */
     useGL = checkDrawingWithGL(cur, count);
+
+#ifdef MTK_HARDWARE
+    checkLayersSwapRequired(fbLayerCount);
+    mLayersSwapRequired = mBusySwap ? true : mLayersSwapRequired;
+    if (!mLayersSwapRequired) {
+        return;
+    }
+#endif//MTK_HARDWARE
 
     if (!useGL) {
         return;
@@ -1380,6 +1604,34 @@ uint32_t SurfaceFlinger::setTransactionFlags(uint32_t flags)
     return old;
 }
 
+#ifdef MTK_HARDWARE
+status_t SurfaceFlinger::freezeDisplay(DisplayID dpy, uint32_t flags)
+{
+    if (UNLIKELY(uint32_t(dpy) >= DISPLAY_COUNT))
+        return BAD_VALUE;
+
+    Mutex::Autolock _l(mStateLock);
+
+    mCurrentState.freezeDisplay = 1;
+    mNeedUpdateFreezeDisplayState = true;
+    setTransactionFlags(eTransactionNeeded);
+
+    return NO_ERROR;
+}
+
+status_t SurfaceFlinger::unfreezeDisplay(DisplayID dpy, uint32_t flags)
+{
+    if (UNLIKELY(uint32_t(dpy) >= DISPLAY_COUNT))
+        return BAD_VALUE;
+
+    Mutex::Autolock _l(mStateLock);
+    mCurrentState.freezeDisplay = 0;
+    mNeedUpdateFreezeDisplayState = true;
+    setTransactionFlags(eTransactionNeeded);
+    return NO_ERROR;
+}
+
+#endif//MTK_HARDWARE
 
 void SurfaceFlinger::setTransactionState(const Vector<ComposerState>& state,
         int orientation, uint32_t flags) {
@@ -1689,13 +1941,29 @@ void SurfaceFlinger::screenReleased(int dpy)
     // this may be called by a signal handler, we can't do too much in here
     android_atomic_or(eConsoleReleased, &mConsoleSignals);
     signalEvent();
+#ifdef MTK_HARDWARE
+    if (NULL != mWatchDog.get())
+        mWatchDog->screenReleased(dpy);
+
+#endif//MTK_HARDWARE
 }
 
 void SurfaceFlinger::screenAcquired(int dpy)
 {
     // this may be called by a signal handler, we can't do too much in here
     android_atomic_or(eConsoleAcquired, &mConsoleSignals);
+#ifdef MTK_HARDWARE
+    mLayersSwapRequired = true;
+#endif//MTK_HARDWARE
     signalEvent();
+#ifdef MTK_HARDWARE
+    usleep(16667);
+    property_set("sys.ipowin.done", "1");
+
+    if (NULL != mWatchDog.get())
+        mWatchDog->screenAcquired(dpy);
+
+#endif//MTK_HARDWARE
 }
 
 status_t SurfaceFlinger::dump(int fd, const Vector<String16>& args)
@@ -1703,6 +1971,10 @@ status_t SurfaceFlinger::dump(int fd, const Vector<String16>& args)
     const size_t SIZE = 4096;
     char buffer[SIZE];
     String8 result;
+
+#ifdef MTK_HARDWARE
+    triggerPropertySet();
+#endif//MTK_HARDWARE
 
     if (!PermissionCache::checkCallingPermission(sDump)) {
         snprintf(buffer, SIZE, "Permission Denial: "
@@ -1951,6 +2223,9 @@ void SurfaceFlinger::repaintEverything() {
     const DisplayHardware& hw(graphicPlane(0).displayHardware());
     const Rect bounds(hw.getBounds());
     setInvalidateRegion(Region(bounds));
+#ifdef MTK_HARDWARE
+    mLayersSwapRequired = true;
+#endif//MTK_HARDWARE
     signalEvent();
 }
 
@@ -2494,6 +2769,16 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
     const uint32_t hw_w = hw.getWidth();
     const uint32_t hw_h = hw.getHeight();
 
+#ifdef MTK_HARDWARE
+    int displayOrientation = mGraphicPlanes[dpy].getDisplayOrientation();
+    if ((1 == displayOrientation) || (3 == displayOrientation)) {
+        int tmp;
+        tmp = sw;
+        sw = sh;
+        sh = tmp;
+    }
+#endif//MTK_HARDWARE
+
     if ((sw > hw_w) || (sh > hw_h))
         return BAD_VALUE;
 
@@ -2568,6 +2853,8 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
                     new MemoryHeapBase(size, 0, "screen-capture") );
             void* const ptr = base->getBase();
             if (ptr) {
+
+#ifndef MTK_HARDWARE
                 // capture the screen with glReadPixels()
                 glReadPixels(0, 0, sw, sh, GL_RGBA, GL_UNSIGNED_BYTE, ptr);
                 if (glGetError() == GL_NO_ERROR) {
@@ -2576,6 +2863,87 @@ status_t SurfaceFlinger::captureScreenImplLocked(DisplayID dpy,
                     *h = sh;
                     *f = PIXEL_FORMAT_RGBA_8888;
                     result = NO_ERROR;
+#else
+                if (0 != displayOrientation) {
+                    sp<MemoryHeapBase> base_tmp(
+                        new MemoryHeapBase(size, 0, "screen-capture-tmp") );
+                    void* const ptr_tmp = base_tmp->getBase();
+
+                    if (ptr_tmp) {
+                        // get pixel data to temp heap first
+                        glReadPixels(0, 0, sw, sh, GL_RGBA, GL_UNSIGNED_BYTE, ptr_tmp);
+
+                        // draw rotated back data to output heap
+                        if (glGetError() == GL_NO_ERROR) {
+                            SkBitmap bitmap_src;
+                            SkBitmap bitmap_trg;
+                            int trg_w, trg_h;
+                            int dx, dy;
+
+                            switch (displayOrientation) {
+                            case 1:
+                                dx = 0;
+                                dy = sw;
+                                trg_w = sh;
+                                trg_h = sw;
+                                break;
+                            case 2:
+                                dx = sw;
+                                dy = sh;
+                                trg_w = sw;
+                                trg_h = sh;
+                                break;
+                            case 3:
+                                dx = sh;
+                                dy = 0;
+                                trg_w = sh;
+                                trg_h = sw;
+                                break;
+                            default:
+                                dx = sw;
+                                dy = sh;
+                                trg_w = sw;
+                                trg_h = sh;
+                            }
+
+                            bitmap_src.setConfig(SkBitmap::kARGB_8888_Config, sw, sh, sw * 4);
+                            bitmap_src.setPixels(ptr_tmp, NULL);
+
+                            bitmap_trg.setConfig(SkBitmap::kARGB_8888_Config, trg_w, trg_h, trg_w * 4);
+                            bitmap_trg.setPixels(ptr, NULL);
+
+                            SkCanvas canvas_trg(bitmap_trg);
+                            SkMatrix matrix;
+
+                            matrix.setRotate(360 - displayOrientation * 90);
+                            matrix.postTranslate(dx, dy);
+                            //matrix.setRotate(270);
+                            //matrix.postTranslate(0, 200);
+                            canvas_trg.drawBitmapMatrix(bitmap_src,matrix, NULL);
+
+                            *heap = base;
+                            *w = trg_w;
+                            *h = trg_h;
+                            *f = PIXEL_FORMAT_RGBA_8888;
+                            result = NO_ERROR;
+                        }
+                    } else {
+                        result = NO_MEMORY;
+                    }
+
+                } else {
+                    // capture the screen with glReadPixels()
+                    glReadPixels(0, 0, sw, sh, GL_RGBA, GL_UNSIGNED_BYTE, ptr);
+
+                    if (glGetError() == GL_NO_ERROR) {
+                        *heap = base;
+                        *w = sw;
+                        *h = sh;
+                        *f = PIXEL_FORMAT_RGBA_8888;
+                        result = NO_ERROR;
+                    }
+
+#endif//MTK_HARDWARE
                 }
             } else {
                 result = NO_MEMORY;
@@ -2925,6 +3293,10 @@ void GraphicPlane::setDisplayHardware(DisplayHardware *hw)
             break;
         }
     }
+
+#ifdef MTK_HARDWARE
+    mDisplayOrientation = displayOrientation;
+#endif//MTK_HARDWARE
 
     const float w = hw->getWidth();
     const float h = hw->getHeight();

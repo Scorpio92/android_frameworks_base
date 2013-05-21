@@ -63,7 +63,11 @@ public:
     void        clear();
     
     status_t    setLayer(int32_t layer);
+#ifndef MTK_HARDWARE
     status_t    setPosition(int32_t x, int32_t y);
+#else
+    status_t    setPosition(float x, float y);
+#endif//MTK_HARDWARE
     status_t    setSize(uint32_t w, uint32_t h);
     status_t    hide();
     status_t    show(int32_t layer = -1);

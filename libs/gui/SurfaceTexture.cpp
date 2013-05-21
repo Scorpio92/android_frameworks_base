@@ -39,6 +39,9 @@
 #ifdef QCOM_HARDWARE
 #include <qcom_ui.h>
 #endif
+#ifdef MTK_HARDWARE
+#include <cutils/properties.h>
+#endif//MTK_HARDWARE
 
 // This compile option causes SurfaceTexture to return the buffer that is currently
 // attached to the GL texture from dequeueBuffer when no other buffers are
@@ -149,7 +152,15 @@ SurfaceTexture::SurfaceTexture(GLuint tex, bool allowSynchronousMode,
 #ifdef QCOM_HARDWARE
     mS3DFormat(0),
 #endif
-    mFrameCounter(0) {
+    mFrameCounter(0) 
+#ifdef MTK_HARDWARE
+    , mIsAuxSlotConversionRequired(false),
+    mIsAuxSlotDirty(false),
+    mBackAuxSlot(mAuxSlot),
+    mFrontAuxSlot(mAuxSlot + 1),
+    mDrawLine_Aux(false)
+#endif//MTK_HARDWARE
+    {
     // Choose a name using the PID and a process-unique ID.
     mName = String8::format("unnamed-%d-%d", getpid(), createProcessUniqueId());
 
@@ -178,6 +189,12 @@ SurfaceTexture::SurfaceTexture(GLuint tex, bool allowSynchronousMode,
     }
     LOGE_IF(!mBlitEngine, "\nCannot open copybit mBlitEngine=%p", mBlitEngine);
 #endif
+
+#ifdef MTK_HARDWARE
+    char value[PROPERTY_VALUE_MAX];
+    property_get("debug.sf.lineaux", value, "0");
+    mDrawLine_Aux = atoi(value);
+#endif//MTK_HARDWARE
 }
 
 SurfaceTexture::~SurfaceTexture() {
@@ -188,6 +205,10 @@ SurfaceTexture::~SurfaceTexture() {
         copybit_close(mBlitEngine);
     }
 #endif
+#ifdef MTK_HARDWARE
+    freeAuxSlot(mAuxSlot[0]);
+    freeAuxSlot(mAuxSlot[1]);
+#endif//MTK_HARDWARE
 }
 
 status_t SurfaceTexture::setBufferCountServerLocked(int bufferCount) {
@@ -556,7 +577,13 @@ status_t SurfaceTexture::dequeueBuffer(int *outBuf, uint32_t w, uint32_t h,
             if (updateFormat) {
                 mPixelFormat = format;
             }
-
+#ifdef MTK_HARDWARE
+            if (mSlots[buf].mMva != NULL) {
+                if(buffer != NULL) {
+                    unregisterMva(mSlots[buf]);
+                }
+            }
+#endif//MTK_HARDWARE
             mSlots[buf].mGraphicBuffer = graphicBuffer;
             mSlots[buf].mRequestBufferCalled = false;
             mSlots[buf].mFence = EGL_NO_SYNC_KHR;
@@ -700,7 +727,11 @@ status_t SurfaceTexture::queueBuffer(int buf, int64_t timestamp,
         updateBufferS3DFormat(mSlots[buf].mGraphicBuffer, mS3DFormat);
         sp<GraphicBuffer> buffer = mSlots[buf].mGraphicBuffer;
 #endif
-
+#ifdef MTK_HARDWARE
+        if (true == isFormatNeedConversion()) {
+            registerMva(mSlots[buf], MVA_TYPE_INPUT);
+        }
+#endif//MTK_HARDWARE
         mDequeueCondition.signal();
 
         *outWidth = mDefaultWidth;
@@ -1094,7 +1125,21 @@ status_t SurfaceTexture::updateTexImage(bool deferConversion) {
         mCurrentScalingMode = mSlots[buf].mScalingMode;
         mCurrentTimestamp = mSlots[buf].mTimestamp;
         computeCurrentTransformMatrix();
+#ifdef MTK_HARDWARE
+        mIsAuxSlotConversionRequired = isFormatNeedConversion();
+        if (true == mIsAuxSlotConversionRequired) {
+            convertToAuxSlot(false);        // try conversion here
+        } else {
+            mIsAuxSlotDirty = false;
+        }
 
+        if (true == mIsAuxSlotDirty) {      // if converted into aux buffer
+            bindToAuxSlot();    // use aux buffer as texture
+        } else {    // bind to original buffer if no need to use aux
+            glBindTexture(mTexTarget, mTexName);
+            glEGLImageTargetTexture2DOES(mTexTarget, (GLeglImageOES)image);
+        }
+#endif//MTK_HARDWARE
         // Now that we've passed the point at which failures can happen,
         // it's safe to remove the buffer from the front of the queue.
         mQueue.erase(front);
@@ -1250,6 +1295,11 @@ void SurfaceTexture::setFrameAvailableListener(
 }
 
 void SurfaceTexture::freeBufferLocked(int i) {
+#ifdef MTK_HARDWARE
+    if (true == isFormatNeedConversion()) {
+        unregisterMva(mSlots[i]);
+    }
+#endif//MTK_HARDWARE
     mSlots[i].mGraphicBuffer = 0;
     mSlots[i].mBufferState = BufferSlot::FREE;
     mSlots[i].mFrameNumber = 0;
@@ -1261,8 +1311,16 @@ void SurfaceTexture::freeBufferLocked(int i) {
 }
 
 void SurfaceTexture::freeAllBuffersLocked() {
+#ifdef MTK_HARDWARE
+    Mutex::Autolock l(mMdpMutex);
+#endif//MTK_HARDWARE
     LOGW_IF(!mQueue.isEmpty(),
             "freeAllBuffersLocked called but mQueue is not empty");
+#ifdef MTK_HARDWARE
+    if (true == isFormatNeedConversion()) {
+        convertToAuxSlot(true);
+    }
+#endif//MTK_HARDWARE
     mCurrentTexture = INVALID_BUFFER_SLOT;
     for (int i = 0; i < NUM_BUFFER_SLOTS; i++) {
         freeBufferLocked(i);
@@ -1283,6 +1341,9 @@ void SurfaceTexture::freeAllBuffersLocked() {
 }
 
 void SurfaceTexture::freeAllBuffersExceptHeadLocked() {
+#ifdef MTK_HARDWARE
+    Mutex::Autolock l(mMdpMutex);
+#endif//MTK_HARDWARE
     LOGW_IF(!mQueue.isEmpty(),
             "freeAllBuffersExceptCurrentLocked called but mQueue is not empty");
     int head = -1;
@@ -1290,6 +1351,11 @@ void SurfaceTexture::freeAllBuffersExceptHeadLocked() {
         Fifo::iterator front(mQueue.begin());
         head = *front;
     }
+#ifdef MTK_HARDWARE
+    if (true == isFormatNeedConversion()) {
+        convertToAuxSlot(true);
+    }
+#endif//MTK_HARDWARE
     mCurrentTexture = INVALID_BUFFER_SLOT;
     for (int i = 0; i < NUM_BUFFER_SLOTS; i++) {
         if (i != head) {

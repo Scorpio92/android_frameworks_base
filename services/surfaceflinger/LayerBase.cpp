@@ -103,6 +103,10 @@ void LayerBase::initStates(uint32_t w, uint32_t h, uint32_t flags)
     mCurrentState.flags         = layerFlags;
     mCurrentState.sequence      = 0;
     mCurrentState.transform.set(0, 0);
+#ifdef MTK_HARDWARE
+    //mCurrentState.st_connected_api = SurfaceTexture::NO_CONNECTED_API;
+    //mCurrentState.st_current_transform = Transform::ROT_INVALID;
+#endif//MTK_HARDWARE
 
     // drawing state & current state are identical
     mDrawingState = mCurrentState;
@@ -304,6 +308,7 @@ void LayerBase::drawRegion(const Region& reg) const
         glVertexPointer(2, GL_SHORT, 0, vertices);
         while (it != end) {
             const Rect& r = *it++;
+
             const GLint sy = fbHeight - (r.top + r.height());
             glScissor(r.left, sy, r.width(), r.height());
             glDrawArrays(GL_TRIANGLE_FAN, 0, 4); 
@@ -352,7 +357,12 @@ void LayerBase::setGeometry(hwc_layer_t* hwcl)
 
 void LayerBase::setPerFrameData(hwc_layer_t* hwcl) {
     hwcl->compositionType = HWC_FRAMEBUFFER;
+#ifndef MTK_HARDWARE
     hwcl->handle = NULL;
+#else
+    hwcl->graphicBuffer = NULL;
+    hwcl->connectedApi = 0;
+#endif//MTK_HARDWARE
 }
 
 void LayerBase::setOverlay(bool inOverlay) {
@@ -400,7 +410,9 @@ void LayerBase::clearWithOpenGL(const Region& clip, GLclampf red,
     glDisable(GL_TEXTURE_EXTERNAL_OES);
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
+#ifndef MTK_HARDWARE
     glDisable(GL_DITHER);
+#endif//MTK_HARDWARE
 
     Region::const_iterator it = clip.begin();
     Region::const_iterator const end = clip.end();
@@ -408,6 +420,7 @@ void LayerBase::clearWithOpenGL(const Region& clip, GLclampf red,
     glVertexPointer(2, GL_FLOAT, 0, mVertices);
     while (it != end) {
         const Rect& r = *it++;
+
         const GLint sy = fbHeight - (r.top + r.height());
         glScissor(r.left, sy, r.width(), r.height());
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4); 
@@ -462,11 +475,14 @@ void LayerBase::drawWithOpenGL(const Region& clip) const
     texCoords[3].u = 1;
     texCoords[3].v = 1;
 
+#ifndef MTK_HARDWARE
     if (needsDithering()) {
         glEnable(GL_DITHER);
     } else {
         glDisable(GL_DITHER);
     }
+#endif//MTK_HARDWARE
+
 
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glVertexPointer(2, GL_FLOAT, 0, mVertices);
@@ -476,6 +492,7 @@ void LayerBase::drawWithOpenGL(const Region& clip) const
     Region::const_iterator const end = clip.end();
     while (it != end) {
         const Rect& r = *it++;
+
         const GLint sy = fbHeight - (r.top + r.height());
         glScissor(r.left, sy, r.width(), r.height());
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);

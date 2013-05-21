@@ -82,6 +82,14 @@ public:
                 uint32_t        tint;
                 Transform       transform;
                 Region          transparentRegion;
+#ifdef MTK_HARDWARE
+//                uint32_t        flagsEx;
+
+//                uint32_t        s3d_requested_flags;
+//                uint32_t        s3d_buffer_flags;
+//                uint32_t        st_connected_api;
+//                uint32_t        st_current_transform;
+#endif//MTK_HARDWARE
             };
 
     virtual void setName(const String8& name);
@@ -295,6 +303,16 @@ public:
 
 private:
     LayerBase(const LayerBase& rhs);
+#if 0//def MTK_HARDWARE
+    status_t adjustTexCoord(void *ptr) const;
+
+public:
+    bool bufferDirty;
+    mutable uint64_t firstBufferCount;
+    bool setFlagsEx(uint32_t flags, uint32_t mask);
+private:
+    bool mLogTransaction;
+#endif//MTK_HARDWARE
 };
 
 

@@ -679,6 +679,16 @@ void InputDispatcher::releasePendingEventLocked() {
     if (mPendingEvent) {
         releaseInboundEventLocked(mPendingEvent);
         mPendingEvent = NULL;
+#ifdef MTK_HARDWARE
+//        if(LightWeight_KeyDispatchAnr::IS_ENG_BUILD){
+//        	
+//        	//LOGI("LightWeight: signal anr timeout");
+//        	        	        	
+//        	pthread_mutex_lock(&LightWeight_KeyDispatchAnr::mut_keydispatch_anr_timeout);
+//			pthread_cond_signal(&LightWeight_KeyDispatchAnr::cond_keydispatch_anr_timeout);
+//			pthread_mutex_unlock(&LightWeight_KeyDispatchAnr::mut_keydispatch_anr_timeout);
+//		}
+#endif//MTK_HARDWARE
     }
 }
 

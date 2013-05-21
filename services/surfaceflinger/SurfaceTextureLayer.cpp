@@ -29,6 +29,10 @@ namespace android {
 
 SurfaceTextureLayer::SurfaceTextureLayer(GLuint tex, const sp<Layer>& layer)
     : SurfaceTexture(tex, true, GL_TEXTURE_EXTERNAL_OES, false), mLayer(layer) {
+#ifdef MTK_HARDWARE
+    mLogBuffer = 0;
+    mHWC = NULL;
+#endif//MTK_HARDWARE
 }
 
 SurfaceTextureLayer::~SurfaceTextureLayer() {

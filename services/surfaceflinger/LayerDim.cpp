@@ -74,6 +74,16 @@ void LayerDim::onDraw(const Region& clip) const
     }
 }
 
+
+#ifdef MTK_HARDWARE
+void LayerDim::setGeometry(hwc_layer_t* hwcl)
+{
+    LayerBase::setGeometry(hwcl);
+    const DisplayHardware& hw(graphicPlane(0).displayHardware());
+
+}
+#endif//MTK_HARDWARE
+
 // ---------------------------------------------------------------------------
 
 }; // namespace android

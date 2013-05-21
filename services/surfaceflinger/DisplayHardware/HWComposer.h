@@ -98,6 +98,14 @@ private:
     hwc_display_t           mDpy;
     hwc_surface_t           mSur;
     cb_context              mCBContext;
+#ifdef MTK_HARDWARE
+    mutable size_t          mNumEXLayers;
+#endif//MTK_HARDWARE
+#ifdef MTK_HARDWARE
+public:
+    status_t bypassGL() const;
+#endif//MTK_HARDWARE
+
 };
 
 

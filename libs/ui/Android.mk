@@ -53,6 +53,12 @@ LOCAL_SRC_FILES:= \
 	Rect.cpp \
 	Region.cpp
 
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+
+LOCAL_STATIC_LIBRARIES += \
+	libui-mtk
+endif
+
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libutils \
@@ -66,6 +72,11 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_C_INCLUDES := \
     external/skia/include/core
 
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_C_INCLUDES += \
+	$(WIKO_COMMON_INCLUDE_PATH)/
+
+endif
 LOCAL_MODULE:= libui
 
 include $(BUILD_SHARED_LIBRARY)

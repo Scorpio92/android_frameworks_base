@@ -35,7 +35,9 @@ public:
                 LayerDim(SurfaceFlinger* flinger, DisplayID display,
                         const sp<Client>& client);
         virtual ~LayerDim();
-
+#ifdef MTK_HARDWARE
+    virtual void setGeometry(hwc_layer_t* hwcl);
+#endif//MTK_HARDWARE
     virtual void onDraw(const Region& clip) const;
     virtual bool isOpaque() const         { return false; }
     virtual bool isSecure() const         { return false; }

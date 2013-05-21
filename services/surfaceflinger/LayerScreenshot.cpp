@@ -111,6 +111,30 @@ void LayerScreenshot::onDraw(const Region& clip) const
     const State& s(drawingState());
     Region::const_iterator it = clip.begin();
     Region::const_iterator const end = clip.end();
+#ifdef MTK_HARDWARE
+    GLfloat         mVerticesTmp[4][2];
+    const DisplayHardware& hw(graphicPlane(0).displayHardware());
+    const uint32_t hw_h = hw.getHeight();
+    Transform orientationTransform;
+    int mDisplayWidth = int(graphicPlane(0).getDisplayWidth());
+    int mDisplayHeight = int(graphicPlane(0).getDisplayHeight());
+    int mReverseDisplayOrientation = (4 - graphicPlane(0).getDisplayOrientation()) % 4;
+    GraphicPlane::orientationToTransfrom(mReverseDisplayOrientation, mDisplayWidth, mDisplayHeight,
+            &orientationTransform);
+    
+    const Transform tr(mTransform * orientationTransform);
+
+    uint32_t w = hw.getWidth();
+    uint32_t h = hw.getHeight(); 
+    tr.transform(mVerticesTmp[0], 0, 0);
+    tr.transform(mVerticesTmp[1], 0, h);
+    tr.transform(mVerticesTmp[2], w, h);
+    tr.transform(mVerticesTmp[3], w, 0);
+    for (size_t i=0 ; i<4 ; i++)
+        mVerticesTmp[i][1] = hw_h - mVerticesTmp[i][1];
+        
+
+#endif//MTK_HARDWARE
     if (s.alpha>0 && (it != end)) {
         const DisplayHardware& hw(graphicPlane(0).displayHardware());
         const GLfloat alpha = s.alpha/255.0f;
@@ -141,7 +165,11 @@ void LayerScreenshot::onDraw(const Region& clip) const
 
         glEnableClientState(GL_TEXTURE_COORD_ARRAY);
         glTexCoordPointer(2, GL_FLOAT, 0, mTexCoords);
+#ifndef MTK_HARDWARE
         glVertexPointer(2, GL_FLOAT, 0, mVertices);
+#else
+        glVertexPointer(2, GL_FLOAT, 0, mVerticesTmp);
+#endif//MTK_HARDWARE
 
         while (it != end) {
             const Rect& r = *it++;

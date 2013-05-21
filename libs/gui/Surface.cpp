@@ -100,7 +100,11 @@ status_t SurfaceControl::setLayer(int32_t layer) {
     const sp<SurfaceComposerClient>& client(mClient);
     return client->setLayer(mToken, layer);
 }
+#ifndef MTK_HARDWARE
 status_t SurfaceControl::setPosition(int32_t x, int32_t y) {
+#else
+status_t SurfaceControl::setPosition(float x, float y) {
+#endif//MTK_HARDWARE
     status_t err = validate();
     if (err < 0) return err;
     const sp<SurfaceComposerClient>& client(mClient);
@@ -201,7 +205,6 @@ sp<Surface> SurfaceControl::getSurface() const
     }
     return mSurfaceData;
 }
-
 // ============================================================================
 //  Surface
 // ============================================================================

@@ -92,6 +92,10 @@ GraphicBuffer::GraphicBuffer(ANativeWindowBuffer* buffer, bool keepOwnership)
 
 GraphicBuffer::~GraphicBuffer()
 {
+#ifdef MTK_HARDWARE
+    unmapBuffer();
+#endif//MTK_HARDWARE
+
     if (handle) {
         free_handle();
     }
@@ -135,6 +139,9 @@ status_t GraphicBuffer::reallocate(uint32_t w, uint32_t h, PixelFormat f,
         return NO_ERROR;
 
     if (handle) {
+#ifdef MTK_HARDWARE
+        unmapBuffer();
+#endif//MTK_HARDWARE
         GraphicBufferAllocator& allocator(GraphicBufferAllocator::get());
         allocator.free(handle);
         handle = 0;
@@ -152,6 +159,9 @@ status_t GraphicBuffer::initSize(uint32_t w, uint32_t h, PixelFormat format,
         this->height = h;
         this->format = format;
         this->usage  = reqUsage;
+#ifdef MTK_HARDWARE
+        mapBuffer();
+#endif//MTK_HARDWARE
     }
     return err;
 }
@@ -275,7 +285,13 @@ status_t GraphicBuffer::unflatten(void const* buffer, size_t size,
     mOwner = ownHandle;
 
     if (handle != 0) {
+#ifndef MTK_HARDWARE
         mBufferMapper.registerBuffer(handle);
+#else
+        if (NO_ERROR == mBufferMapper.registerBuffer(handle)){
+            mBufferMapper.registerBuffer(handle, width, height, stride, format, usage);
+        }
+#endif//MTK_HARDWARE
     }
 
     return NO_ERROR;
@@ -290,6 +306,49 @@ int GraphicBuffer::getIndex() const {
     return mIndex;
 }
 
+#ifdef MTK_HARDWARE
+status_t GraphicBuffer::mapBuffer()
+{
+    void *vaddr;
+    int mode = 0x102;
+    status_t res = lock(mode, &vaddr);
+    if (res != NO_ERROR)
+        return res;
+    int bpp = bytesPerPixel(format);
+    if (bpp < 0)
+    {
+        LOGI("bpp < 0");
+    }else{
+        int size = height * stride * bpp;
+        unsigned int mva;
+        res = GraphicBufferAllocator::get().map((unsigned int)vaddr, size, &mva);
+    }
+    unlock();
+    return res;
+}
+
+status_t GraphicBuffer::unmapBuffer()
+{
+    void *vaddr;
+    int mode = 0x102;
+    status_t res = lock(mode, &vaddr);
+    if (res != NO_ERROR)
+        return res;
+    int bpp = bytesPerPixel(format);
+    if (bpp < 0)
+    {
+        LOGI("bpp < 0");
+    }else{
+        int size = height * stride * bpp;
+        int mva;
+        res = GraphicBufferAllocator::get().unmap((unsigned int)vaddr, size, 0);
+    }
+    unlock();
+    return res;
+
+}
+
+#endif//MTK_HARDWARE
 // ---------------------------------------------------------------------------
 
 }; // namespace android

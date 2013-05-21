@@ -44,6 +44,11 @@
 #define SHIFT_SRC_TRANSFORM 4
 #endif
 
+#ifdef MTK_HARDWARE
+#include <SkImageEncoder.h>
+#include <SkBitmap.h>
+#endif//MTK_HARDWARE
+
 #define DEBUG_RESIZE    0
 
 namespace android {
@@ -73,6 +78,9 @@ Layer::Layer(SurfaceFlinger* flinger,
 #ifdef QCOM_HARDWARE
     updateLayerQcomFlags(LAYER_UPDATE_STATUS, true, mLayerQcomFlags);
 #endif
+#ifdef MTK_HARDWARE
+    firstBufferCount = 0;
+#endif//MTK_HARDWARE
 }
 
 void Layer::onFirstRef()
@@ -98,6 +106,9 @@ void Layer::onFirstRef()
 #else
     mSurfaceTexture->setBufferCountServer(2);
 #endif
+#ifdef MTK_HARDWARE
+mSurfaceTexture->setHWC(&(graphicPlane(0).displayHardware().getHwComposer()));
+#endif//MTK_HARDWARE
 }
 
 Layer::~Layer()
@@ -171,7 +182,7 @@ status_t Layer::setBuffers( uint32_t w, uint32_t h,
     PixelFormatInfo displayInfo;
     getPixelFormatInfo(hw.getFormat(), &displayInfo);
     const uint32_t hwFlags = hw.getFlags();
-    
+
     mFormat = format;
 
     mSecure = (flags & ISurfaceComposer::eSecure) ? true : false;
@@ -181,15 +192,18 @@ status_t Layer::setBuffers( uint32_t w, uint32_t h,
 
     mSurfaceTexture->setDefaultBufferSize(w, h);
     mSurfaceTexture->setDefaultBufferFormat(format);
-
+#ifndef MTK_HARDWARE
     if (mFlinger->getUseDithering()) {
+#endif//MTK_HARDWARE
         // we use the red index
         int displayRedSize = displayInfo.getSize(PixelFormatInfo::INDEX_RED);
         int layerRedsize = info.getSize(PixelFormatInfo::INDEX_RED);
         mNeedsDithering = layerRedsize > displayRedSize;
+#ifndef MTK_HARDWARE
     } else {
         mNeedsDithering = false;
     }
+#endif//MTK_HARDWARE
 
     return NO_ERROR;
 }
@@ -218,8 +232,12 @@ void Layer::setGeometry(hwc_layer_t* hwcl)
 #else
     // we can't do alpha-fade with the hwc HAL
     const State& s(drawingState());
+#ifndef MTK_HARDWARE
     if (s.alpha < 0xFF) {
-	hwcl->flags = HWC_SKIP_LAYER;
+#else
+    if ((s.alpha < 0xFF) || (true == isProtected())) {
+#endif//MTK_HARDWARE
+	    hwcl->flags = HWC_SKIP_LAYER;
     }
 #endif
 
@@ -238,6 +256,16 @@ void Layer::setGeometry(hwc_layer_t* hwcl)
     // this gives us only the "orientation" component of the transform
     const uint32_t finalTransform = tr.getOrientation();
 
+#ifdef MTK_HARDWARE
+    hwcl->transform = finalTransform;
+    hwcl->dimColor = s.alpha;
+    float *m = hwcl->transformMatrix;
+    for (int i = 0, j = 0; i < 9; i += 3, j++) {
+        m[i + 0] = tr[0][j];
+        m[i + 1] = tr[1][j];
+        m[i + 2] = tr[2][j];
+    }
+#endif//MTK_HARDWARE
     // we can only handle simple transformation
     if (finalTransform & Transform::ROT_INVALID) {
         hwcl->flags = HWC_SKIP_LAYER;
@@ -268,6 +296,10 @@ void Layer::setGeometry(hwc_layer_t* hwcl)
             hwcl->sourceCrop.bottom = mTransformedBounds.height();
         }
     }
+#ifdef MTK_HARDWARE
+    hwcl->identity = getIdentity();
+    hwcl->mutex = &(mSurfaceTexture->mMdpMutex);
+#endif//MTK_HARDWARE
 }
 
 void Layer::setPerFrameData(hwc_layer_t* hwcl) {
@@ -277,10 +309,26 @@ void Layer::setPerFrameData(hwc_layer_t* hwcl) {
         // or if we ran out of memory. In that case, don't let
         // HWC handle it.
         hwcl->flags |= HWC_SKIP_LAYER;
+#ifndef MTK_HARDWARE
         hwcl->handle = NULL;
     } else {
         hwcl->handle = buffer->handle;
     }
+#else
+        hwcl->graphicBuffer = NULL;
+        hwcl->connectedApi = mSurfaceTexture->getConnectedApi();
+    } else {
+        hwcl->graphicBuffer = buffer;
+        hwcl->connectedApi = mSurfaceTexture->getConnectedApi();
+        //hwcl->flagsEx = mDrawingState.flagsEx;
+        //hwcl->bufferTransform = mSurfaceTexture->getCurrentTransform();
+
+        if (bufferDirty || firstBufferCount <= 1 || contentDirty)
+            hwcl->flags |= HWC_DIRTY_LAYER;
+        else
+            hwcl->flags &= ~HWC_DIRTY_LAYER;
+    }
+#endif//MTK_HARDWARE
 #ifdef QCOM_HARDWARE
     updateLayerQcomFlags(LAYER_ASYNCHRONOUS_STATUS, !mSurfaceTexture->isSynchronousMode(), mLayerQcomFlags);
     hwcl->flags = getPerFrameFlags(hwcl->flags, mLayerQcomFlags);
@@ -345,13 +393,36 @@ void Layer::onDraw(const Region& clip) const
 #endif
 
     if (!isProtected()) {
+#ifndef MTK_HARDWARE
 #ifdef DECIDE_TEXTURE_TARGET
         glBindTexture(currentTextureTarget, mTextureName);
 #else
         glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
 #endif
+#else
+       if (true == mSurfaceTexture->isAuxSlotConversionRequired()) {
+            mSurfaceTexture->convertToAuxSlotLocked(true);
+        }
+
+        if (true == mSurfaceTexture->isAuxSlotDirty()) {
+            mSurfaceTexture->bindToAuxSlotLocked();
+        } else {    // bind to original buffer
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, mTextureName);
+        }
+#endif//MTK_HARDWARE
         GLenum filter = GL_NEAREST;
-        if (getFiltering() || needsFiltering() || isFixedSize() || isCropped()) {
+
+#ifndef MTK_HARDWARE
+        if (getFiltering() || needsFiltering() || isFixedSize() || isCropped())
+        {
+#else
+        if (getFiltering() || needsFiltering() || isFixedSize() || isCropped() /* ||
+            (SurfaceFlinger::State::eComposing2D != mFlinger->mDrawingState.composingPhase)*/)
+        {
+#endif//MTK_HARDWARE
+
+
+
             // TODO: we could be more subtle with isFixedSize()
             filter = GL_LINEAR;
         }
@@ -633,18 +704,30 @@ void Layer::lockPageFlip(bool& recomputeVisibleRegions)
                     bufWidth, bufHeight, mCurrentTransform,
                     front.requested_w, front.requested_h);
         }
+#ifdef MTK_HARDWARE
+        //updateFlagsPerBuffer();
+#endif//MTK_HARDWARE
 #ifdef QCOM_HARDWARE
     } else {
         updateLayerQcomFlags(LAYER_UPDATE_STATUS, false, mLayerQcomFlags);
 #endif
     }
+#ifdef MTK_HARDWARE
+    //updateFlagsPerFrame();
+#endif//MTK_HARDWARE
 }
 
 void Layer::unlockPageFlip(
         const Transform& planeTransform, Region& outDirtyRegion)
 {
     Region dirtyRegion(mPostedDirtyRegion);
+#ifdef MTK_HARDWARE
+    bufferDirty = !dirtyRegion.isEmpty();
+#endif//MTK_HARDWARE
     if (!dirtyRegion.isEmpty()) {
+#ifndef MTK_HARDWARE
+        firstBufferCount++;
+#endif//MTK_HARDWARE
         mPostedDirtyRegion.clear();
         // The dirty region is given in the layer's coordinate space
         // transform the dirty region by the surface's transformation

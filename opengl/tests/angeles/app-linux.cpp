@@ -55,6 +55,10 @@
 #include <ui/FramebufferNativeWindow.h>
 #include <ui/EGLUtils.h>
 
+#ifdef MTK_HARDWARE
+#include <surfaceflinger/Surface.h>
+#include <surfaceflinger/SurfaceComposerClient.h>
+#endif//MTK_HARDWARE
 using namespace android;
 
 #include "app.h"
@@ -135,19 +139,40 @@ static int initGraphics(unsigned samples)
     EGLint w, h;
     EGLDisplay dpy;
 
+#ifndef MTK_HARDWARE
     EGLNativeWindowType window = android_createDisplaySurface();
+#else
+    sp<SurfaceComposerClient> client;
+    sp<SurfaceControl>        surfaceCtl;
+    sp<Surface>               native_surface;
+    client = new SurfaceComposerClient();
+    surfaceCtl = client->createSurface(String8("angeles"), 0, 480, 800, PIXEL_FORMAT_RGB_565, 0);
+    client->openGlobalTransaction();
+    surfaceCtl->setLayer(100000);
+    client->closeGlobalTransaction();
+    native_surface = surfaceCtl->getSurface();
+    native_window_set_buffers_format(native_surface.get(), PIXEL_FORMAT_RGB_565);
+#endif//MTK_HARDWARE
 
     dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     eglInitialize(dpy, &majorVersion, &minorVersion);
 
+#ifndef MTK_HARDWARE
     status_t err = EGLUtils::selectConfigForNativeWindow(
             dpy, configAttribs, window, &config);
+#else
+    status_t err = EGLUtils::selectConfigForNativeWindow(
+            dpy, configAttribs, native_surface.get(), &config);
+#endif//MTK_HARDWARE
     if (err) {
         fprintf(stderr, "couldn't find an EGLConfig matching the screen format\n");
         return 0;
     }
-
+#ifndef MTK_HARDWARE
     surface = eglCreateWindowSurface(dpy, config, window, NULL);
+#else
+    surface = eglCreateWindowSurface(dpy, config, native_surface.get(), NULL);
+#endif//MTK_HARDWARE
     egl_error("eglCreateWindowSurface");
 
     fprintf(stderr,"surface = %p\n", surface);

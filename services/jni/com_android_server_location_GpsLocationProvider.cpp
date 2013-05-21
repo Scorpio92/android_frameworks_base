@@ -358,9 +358,24 @@ static jint android_location_GpsLocationProvider_read_sv_status(JNIEnv* env, job
         elev[i] = sGpsSvStatus.sv_list[i].elevation;
         azim[i] = sGpsSvStatus.sv_list[i].azimuth;
     }
+#ifndef MTK_HARDWARE
     mask[0] = sGpsSvStatus.ephemeris_mask;
     mask[1] = sGpsSvStatus.almanac_mask;
     mask[2] = sGpsSvStatus.used_in_fix_mask;
+#else
+	for (int i = 0, k = 0; k < 3; i = (i+1) % 8) {
+		if (k == 0) {
+			mask[i + k * 8] = sGpsSvStatus.ephemeris_mask[i];
+		} else if (k == 1) {
+			mask[i + k * 8] = sGpsSvStatus.almanac_mask[i];
+		} else if (k == 2) {
+			mask[i + k * 8] = sGpsSvStatus.used_in_fix_mask[i];
+		}
+	if (i == 7) {
+			k++;
+		}
+	}
+#endif//MTK_HARDWARE
 
     env->ReleaseIntArrayElements(prnArray, prns, 0);
     env->ReleaseFloatArrayElements(snrArray, snrs, 0);
@@ -565,6 +580,27 @@ static void android_location_GpsLocationProvider_update_network_state(JNIEnv* en
     }
 }
 
+#ifdef MTK_HARDWARE
+static jint android_location_GpsLocationProvider_epo_file_time(JNIEnv* env, jobject obj, jlongArray uTime)
+{	  
+	  LOGD("android_location_GpsLocationProvider_epo_file_time\n");
+	  jlong* u4Time = env->GetLongArrayElements(uTime, 0);
+	  long long int *uTmpTime = reinterpret_cast<long long int*>(u4Time); 
+          if(!sGpsInterface)
+              return -1;
+	  return sGpsInterface->epo_file_time(uTmpTime);
+	  //env->ReleaseLongArrayElements(uTmpTime, u4Time, 0);
+
+}
+
+static jint android_location_GpsLocationProvider_epo_file_update(JNIEnv* env, jobject obj)
+{
+	  LOGD("android_location_GpsLocationProvider_epo_file_update\n");
+          if(!sGpsInterface)
+              return -1;
+	  return sGpsInterface->epo_file_update();
+}
+#endif//MTK_HARDWARE
 static JNINativeMethod sMethods[] = {
      /* name, signature, funcPtr */
     {"class_init_native", "()V", (void *)android_location_GpsLocationProvider_class_init_native},
@@ -575,6 +611,10 @@ static JNINativeMethod sMethods[] = {
     {"native_start", "()Z", (void*)android_location_GpsLocationProvider_start},
     {"native_stop", "()Z", (void*)android_location_GpsLocationProvider_stop},
     {"native_delete_aiding_data", "(I)V", (void*)android_location_GpsLocationProvider_delete_aiding_data},
+#ifdef MTK_HARDWARE
+    {"native_get_file_time", "([J)I", (void*)android_location_GpsLocationProvider_epo_file_time},  
+    {"native_update_epo_file", "()I", (void*)android_location_GpsLocationProvider_epo_file_update},    
+#endif//MTK_HARDWARE
     {"native_read_sv_status", "([I[F[F[F[I)I", (void*)android_location_GpsLocationProvider_read_sv_status},
     {"native_read_nmea", "([BI)I", (void*)android_location_GpsLocationProvider_read_nmea},
     {"native_inject_time", "(JJI)V", (void*)android_location_GpsLocationProvider_inject_time},

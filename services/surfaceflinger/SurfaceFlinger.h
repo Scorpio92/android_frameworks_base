@@ -40,6 +40,9 @@
 
 #include "MessageQueue.h"
 
+#ifdef MTK_HARDWARE
+#include "SurfaceFlingerWatchDog.h"
+#endif//MTK_HARDWARE
 namespace android {
 
 // ---------------------------------------------------------------------------
@@ -49,6 +52,9 @@ class DisplayHardware;
 class Layer;
 class LayerDim;
 class LayerScreenshot;
+#ifdef MTK_HARDWARE
+class SFWatchDog;
+#endif//MTK_HARDWARE
 struct surface_flinger_cblk_t;
 
 #define LIKELY( exp )       (__builtin_expect( (exp) != 0, true  ))
@@ -127,12 +133,17 @@ public:
         int                     getOrientation() const { return mOrientation; }
         int                     getWidth() const;
         int                     getHeight() const;
+#ifdef MTK_HARDWARE
+        int                     getDisplayOrientation() const { return mDisplayOrientation; }
+        float                  getDisplayWidth() const { return mDisplayWidth; }
+        float                  getDisplayHeight() const { return mDisplayHeight; }
+#endif//MTK_HARDWARE
 
         const DisplayHardware&  displayHardware() const;
         DisplayHardware&        editDisplayHardware();
         const Transform&        transform() const;
         EGLDisplay              getEGLDisplay() const;
-        
+
 private:
                                 GraphicPlane(const GraphicPlane&);
         GraphicPlane            operator = (const GraphicPlane&);
@@ -141,6 +152,9 @@ private:
         Transform               mGlobalTransform;
         Transform               mDisplayTransform;
         int                     mOrientation;
+#ifdef MTK_HARDWARE
+        int                     mDisplayOrientation;
+#endif//
         float                   mDisplayWidth;
         float                   mDisplayHeight;
         int                     mWidth;
@@ -177,6 +191,10 @@ public:
     virtual sp<IGraphicBufferAlloc>     createGraphicBufferAlloc();
     virtual sp<IMemoryHeap>             getCblk() const;
     virtual void                        bootFinished();
+#ifdef MTK_HARDWARE
+    virtual status_t                    freezeDisplay(DisplayID dpy, uint32_t flags);
+    virtual status_t                    unfreezeDisplay(DisplayID dpy, uint32_t flags);
+#endif//MTK_HARDWARE
     virtual void                        setTransactionState(const Vector<ComposerState>& state,
                                                             int orientation, uint32_t flags);
     virtual int                         setOrientation(DisplayID dpy, int orientation, uint32_t flags);
@@ -246,6 +264,11 @@ private:
     friend class LayerBase;
     friend class LayerBaseClient;
     friend class Layer;
+#ifdef MTK_HARDWARE
+    friend class DisplayHardware;
+    friend class SFWatchDog;
+    friend class HWComposer;
+#endif//MTK_HARDWARE
 
     sp<ISurface> createSurface(
             ISurfaceComposerClient::surface_data_t* params,
@@ -287,12 +310,32 @@ private:
     };
 
     struct State {
+//#ifdef MTK_HARDWARE
+//        enum {
+//            eComposing2D        = 0x00,
+//            eComposingS3D       = 0xFF,
+//            eComposingS3DLeft   = 0x01,
+//            eComposingS3DRight  = 0x02,
+//            eComposingS3DTop    = 0x03,
+//            eComposingS3DBottom = 0x04,
+//        };
+//#endif//MTK_HARDWARE
+
         State() {
             orientation = ISurfaceComposer::eOrientationDefault;
+#ifdef MTK_HARDWARE
+            //composingOrientation = ISurfaceComposer::eOrientationDefault;
+            //composingPhase = eComposing2D;
+#endif//MTK_HARDWARE
         }
         LayerVector     layersSortedByZ;
         uint8_t         orientation;
         uint8_t         orientationFlags;
+#ifdef MTK_HARDWARE
+        uint8_t         freezeDisplay;
+//        uint8_t         composingPhase;
+//        uint8_t         composingOrientation;
+#endif//MTK_HARDWARE
     };
 
     virtual bool        threadLoop();
@@ -304,6 +347,11 @@ public:     // hack to work around gcc 4.0.3 bug
           GraphicPlane&     graphicPlane(int dpy);
           void              signalEvent();
           void              repaintEverything();
+#ifdef MTK_HARDWARE
+          bool              hasFreezeDisplay(void) { return mFreezeDisplay;}
+          bool              isLayerScreenShotVisible(void) { return mLayerScreenShotVisible;}
+          void              checkLayerScreenShotVisibility(void) const;
+#endif//MTK_HARDWARE
 
 private:
             void        waitForEvent();
@@ -400,8 +448,15 @@ private:
                 Region                      mWormholeRegion;
                 bool                        mVisibleRegionsDirty;
                 bool                        mHwWorkListDirty;
+#ifdef MTK_HARDWARE
+                bool                        mFreezeDisplay;
+                bool                        mNeedUpdateFreezeDisplayState;
+#endif//MTK_HARDWARE
                 int32_t                     mElectronBeamAnimationMode;
                 Vector< sp<LayerBase> >     mVisibleLayersSortedByZ;
+#ifdef MTK_HARDWARE
+                mutable bool                mLayerScreenShotVisible;
+#endif//MTK_HARDWARE
 
 
                 // don't use a lock for these, we don't care
@@ -415,6 +470,9 @@ private:
                 volatile nsecs_t            mDebugInTransaction;
                 nsecs_t                     mLastTransactionTime;
                 bool                        mBootFinished;
+#ifdef MTK_HARDWARE
+                bool                        mBootAnimationEnabled;
+#endif//MTK_HARDWARE
 
 #ifdef QCOM_HDMI_OUT
                 //HDMI specific
@@ -443,7 +501,45 @@ private:
 
    // only written in the main thread, only read in other threads
    volatile     int32_t                     mSecureFrameBuffer;
+#ifdef MTK_HARDWARE
+private:
+                void        checkLayersSwapRequired(int fbLayerCount);
 
+                bool        mLayersSwapRequired;
+                bool        mBusySwap;
+                bool        mLogRepaint;
+
+                // added by Ryan
+                // for run-time enable property
+                void        triggerPropertySet();
+
+
+                // added by Ryan
+                // for enabling slow motion
+                uint32_t    mDelayTime;
+
+                // for drawing debug line
+                bool        mDrawLine_G3D;
+                bool        mDrawLine_Aux;
+                bool        mDrawLine_ScreenShot;
+                bool        mDrawLine_Overlay;
+                bool        mDebugOEX;
+
+public:
+                bool        getAndClearLayersSwapRequired();
+
+private:
+                sp<SFWatchDog> mWatchDog;
+public:
+    struct projectConfig_t {
+        bool mtk_tvout_support;
+        bool mtk_hdmi_support;
+        bool mtk_s3d_support;
+    };
+
+    static projectConfig_t sMtkConfig;
+private:
+#endif//MTK_HARDWARE
                 bool                        mUseDithering;
 };
 

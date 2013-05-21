@@ -27,6 +27,10 @@ LOCAL_SRC_FILES:= \
     PointerController.cpp \
     SpriteController.cpp
 
+#ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)), true)
+#    LOCAL_SRC_FILES += Lightweight_KeyDispatchANR.cpp
+#endif
+
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libutils \

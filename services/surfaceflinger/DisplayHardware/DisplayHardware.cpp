@@ -77,6 +77,13 @@ DisplayHardware::DisplayHardware(
         uint32_t dpy)
     : DisplayHardwareBase(flinger, dpy),
       mFlinger(flinger), mFlags(0), mHwc(0)
+#ifdef MTK_HARDWARE
+      ,
+      mTVOutOrientation(Transform::ROT_INVALID)
+//,
+//      mS3DComposingOrientation(Transform::ROT_INVALID),            // !!! touched here on purpose for patch release !!!
+//      mS3DComposingPhase(SurfaceFlinger::State::eComposing2D)
+#endif//MTK_HARDWARE
 {
     init(dpy);
 }
@@ -152,6 +159,9 @@ void DisplayHardware::init(uint32_t dpy)
 #warning "refresh rate set via makefile to REFRESH_RATE"
 #endif
 
+#ifdef MTK_HARDWARE
+    getFBRefreshRate();
+#endif//MTK_HARDWARE
     EGLint w, h, dummy;
     EGLint numConfigs=0;
     EGLSurface surface;
@@ -390,7 +400,9 @@ void DisplayHardware::flip(const Region& dirty) const
     }
     
     mPageFlipCount++;
-
+#ifdef MTK_HARDWARE
+    handleDisplayDevice();
+#endif//MTK_HARDWARE
     if (mHwc->initCheck() == NO_ERROR) {
         mHwc->commit();
     } else {

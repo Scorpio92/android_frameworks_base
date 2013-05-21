@@ -42,10 +42,17 @@ GraphicBufferAllocator::GraphicBufferAllocator()
     if (err == 0) {
         gralloc_open(module, &mAllocDev);
     }
+#ifdef MTK_HARDWARE
+
+    initMapper();
+#endif//MTK_HARDWARE
 }
 
 GraphicBufferAllocator::~GraphicBufferAllocator()
 {
+#ifdef MTK_HARDWARE
+    uninitMapper();
+#endif//MTK_HARDWARE
     gralloc_close(mAllocDev);
 }
 
@@ -150,5 +157,43 @@ status_t GraphicBufferAllocator::free(buffer_handle_t handle)
     return err;
 }
 
+#ifdef MTK_HARDWARE
+void GraphicBufferAllocator::initMapper()
+{
+    hw_module_t const* module;
+    int err = hw_get_module(MMAPPER_HARDWARE_MODULE_ID, &module);
+    LOGE_IF(err, "FATAL: can't find the %s module", MMAPPER_HARDWARE_NAME);
+    if (err == 0) {
+        mmumap_open(module, &mMapperDev);
+    }
+
+}
+
+void GraphicBufferAllocator::uninitMapper()
+{
+    mmumap_close(mMapperDev);
+}
+
+status_t GraphicBufferAllocator::map(unsigned int addr, unsigned int size, unsigned int *mva)
+{
+    if(mMapperDev==NULL)
+        return -1;
+    return mMapperDev->register_buffer(addr, size, mva);
+
+}
+status_t GraphicBufferAllocator::unmap(unsigned int addr, unsigned int size, unsigned int mva)
+{
+    if(mMapperDev==NULL)
+        return -1;
+    return mMapperDev->unregister_buffer(addr, size, mva);
+}
+status_t GraphicBufferAllocator::query(unsigned int addr, unsigned int size, unsigned int *mva)
+{
+    if(mMapperDev==NULL)
+        return -1;
+    status_t err = mMapperDev->query_buffer(addr, size, mva);
+    return err;
+}
+#endif//MTK_HARDWARE
 // ---------------------------------------------------------------------------
 }; // namespace android

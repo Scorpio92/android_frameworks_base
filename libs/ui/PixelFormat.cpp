@@ -95,8 +95,16 @@ status_t getPixelFormatInfo(PixelFormat format, PixelFormatInfo* info)
     }
 
     size_t numEntries;
+
+#ifndef MTK_HARDWARE
     const GGLFormat *i = gglGetPixelFormatTable(&numEntries) + format;
     bool valid = uint32_t(format) < numEntries;
+#else
+    int index = (format == 0x1FF) ? 34 : format;
+    const GGLFormat *i = gglGetPixelFormatTable(&numEntries) + index;
+    bool valid = uint32_t(index) < numEntries;
+#endif//MTK_HARDWARE
+
     if (!valid) {
         return BAD_INDEX;
     }

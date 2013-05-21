@@ -128,6 +128,15 @@ private:
     HWComposer*     mHwc;
 
     sp<FramebufferNativeWindow> mNativeWindow;
+#ifdef MTK_HARDWARE
+    mutable uint32_t mTVOutOrientation;
+//    mutable uint32_t mS3DComposingOrientation;
+//    mutable uint32_t mS3DComposingPhase;
+    
+    status_t getFBRefreshRate();
+    status_t handleDisplayDevice() const;
+
+#endif//MTK_HARDWARE
 };
 
 }; // namespace android

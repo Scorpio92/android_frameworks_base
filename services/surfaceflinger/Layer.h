@@ -132,6 +132,10 @@ private:
     // Qcom specific flags for this layer.
     int mLayerQcomFlags;
 #endif
+#ifdef MTK_HARDWARE
+    //status_t updateFlagsPerBuffer();
+    //status_t updateFlagsPerFrame();
+#endif//MTK_HARDWARE
 };
 
 // ---------------------------------------------------------------------------

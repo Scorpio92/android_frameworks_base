@@ -33,7 +33,7 @@
 #include <unistd.h>
 
 // compile with refcounting debugging enabled
-#define DEBUG_REFS                      0
+#define DEBUG_REFS                      1
 #define DEBUG_REFS_FATAL_SANITY_CHECKS  0
 #define DEBUG_REFS_ENABLED_BY_DEFAULT   1
 #define DEBUG_REFS_CALLSTACK_ENABLED    1

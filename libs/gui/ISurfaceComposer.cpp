@@ -94,6 +94,30 @@ public:
         remote()->transact(BnSurfaceComposer::SET_TRANSACTION_STATE, data, &reply);
     }
 
+#ifdef MTK_HARDWARE
+    virtual status_t freezeDisplay(DisplayID dpy, uint32_t flags)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(ISurfaceComposer::getInterfaceDescriptor());
+        data.writeInt32(dpy);
+        data.writeInt32(flags);
+        remote()->transact(BnSurfaceComposer::FREEZE_DISPLAY, data, &reply);
+        return reply.readInt32();
+    }
+
+    virtual status_t unfreezeDisplay(DisplayID dpy, uint32_t flags)
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(ISurfaceComposer::getInterfaceDescriptor());
+        data.writeInt32(dpy);
+        data.writeInt32(flags);
+        remote()->transact(BnSurfaceComposer::UNFREEZE_DISPLAY, data, &reply);
+        return reply.readInt32();
+    }
+
+#endif//MTK_HARDWARE
+
+
     virtual void bootFinished()
     {
         Parcel data, reply;
@@ -231,6 +255,20 @@ status_t BnSurfaceComposer::onTransact(
             uint32_t flags = data.readInt32();
             setTransactionState(state, orientation, flags);
         } break;
+#ifdef MTK_HARDWARE
+        case FREEZE_DISPLAY: {
+            CHECK_INTERFACE(ISurfaceComposer, data, reply);
+            DisplayID dpy = data.readInt32();
+            uint32_t flags = data.readInt32();
+            reply->writeInt32( freezeDisplay(dpy, flags) );
+        } break;
+        case UNFREEZE_DISPLAY: {
+            CHECK_INTERFACE(ISurfaceComposer, data, reply);
+            DisplayID dpy = data.readInt32();
+            uint32_t flags = data.readInt32();
+            reply->writeInt32( unfreezeDisplay(dpy, flags) );
+        } break;
+#endif//MTK_HARDWARE
         case BOOT_FINISHED: {
             CHECK_INTERFACE(ISurfaceComposer, data, reply);
             bootFinished();

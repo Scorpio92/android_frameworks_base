@@ -11,6 +11,12 @@ LOCAL_SHARED_LIBRARIES := \
     libGLESv1_CM \
     libui
 
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_SHARED_LIBRARIES += libsurfaceflinger \
+					      libandroid \
+						  libgui
+endif
+
 LOCAL_MODULE:= test-opengl-fillrate
 
 LOCAL_MODULE_TAGS := optional

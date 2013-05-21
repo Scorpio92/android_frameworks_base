@@ -114,6 +114,14 @@ status_t BootAnimation::initTexture(Texture* texture, AssetManager& assets,
     texture->w = w;
     texture->h = h;
 
+#ifdef MTK_HARDWARE
+    int tw = 1 << (31 - __builtin_clz(w));
+    int th = 1 << (31 - __builtin_clz(h));
+    if (tw < w) tw <<= 1;
+    if (th < h) th <<= 1;
+#endif//MTK_HARDWARE
+
+
     glGenTextures(1, &texture->name);
     glBindTexture(GL_TEXTURE_2D, texture->name);
 
@@ -127,12 +135,35 @@ status_t BootAnimation::initTexture(Texture* texture, AssetManager& assets,
                     GL_UNSIGNED_SHORT_4_4_4_4, p);
             break;
         case SkBitmap::kARGB_8888_Config:
+#ifdef MTK_HARDWARE
+            if (tw != w || th != h) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tw, th, 0, GL_RGBA,
+                        GL_UNSIGNED_BYTE, 0);
+                glTexSubImage2D(GL_TEXTURE_2D, 0,
+                        0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, p);
+            } else {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA,
+                    GL_UNSIGNED_BYTE, p);
+            }
+
+#endif//MTK_HARDWARE
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA,
                     GL_UNSIGNED_BYTE, p);
             break;
         case SkBitmap::kRGB_565_Config:
+#ifdef MTK_HARDWARE
+            if (tw != w || th != h) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, tw, th, 0, GL_RGB,
+                        GL_UNSIGNED_SHORT_5_6_5, 0);
+                glTexSubImage2D(GL_TEXTURE_2D, 0,
+                        0, 0, w, h, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, p);
+            } else {
+#endif//MTK_HARDWARE
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB,
                     GL_UNSIGNED_SHORT_5_6_5, p);
+#ifdef MTK_HARDWARE
+            }
+#endif//MTK_HARDWARE
             break;
         default:
             break;
@@ -353,7 +384,28 @@ bool BootAnimation::android()
 
     const GLint xc = (mWidth  - mAndroid[0].w) / 2;
     const GLint yc = (mHeight - mAndroid[0].h) / 2;
+#ifndef MTK_HARDWARE
     const Rect updateRect(xc, yc, xc + mAndroid[0].w, yc + mAndroid[0].h);
+#else
+    int x = xc, y = yc;
+    int w = mAndroid[0].w, h = mAndroid[0].h;
+    if (x < 0) {
+        w += x;
+        x  = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y  = 0;
+    }
+    if (w > mWidth) {
+        w = mWidth;
+    }
+    if (h > mHeight) {
+        h = mHeight;
+    }
+    const Rect updateRect(x, y, x+w, y+h);
+#endif//MTK_HARDWARE
+    
 
     glScissor(updateRect.left, mHeight - updateRect.bottom, updateRect.width(),
             updateRect.height());

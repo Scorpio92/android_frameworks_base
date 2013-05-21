@@ -129,6 +129,10 @@ public:
     static void closeGlobalTransaction(bool synchronous) {
         Composer::getInstance().closeGlobalTransactionImpl(synchronous);
     }
+#ifdef MTK_HARDWARE
+    status_t setFlagsEx(const sp<SurfaceComposerClient>& client, SurfaceID id,
+            uint32_t flags, uint32_t mask);
+#endif//MTK_HARDWARE
 };
 
 ANDROID_SINGLETON_STATIC_INSTANCE(Composer);
@@ -542,14 +546,24 @@ ssize_t SurfaceComposerClient::getNumberOfDisplays()
 
 status_t SurfaceComposerClient::freezeDisplay(DisplayID dpy, uint32_t flags)
 {
+#ifndef MTK_HARDWARE
     // This has been made a no-op because it can cause Gralloc buffer deadlocks.
     return NO_ERROR;
+#else
+    sp<ISurfaceComposer> sm(getComposerService());
+    return sm->freezeDisplay(dpy, flags);
+#endif//MTK_HARDWARE
 }
 
 status_t SurfaceComposerClient::unfreezeDisplay(DisplayID dpy, uint32_t flags)
 {
+#ifdef MTK_HARDWARE
     // This has been made a no-op because it can cause Gralloc buffer deadlocks.
     return NO_ERROR;
+#else
+    sp<ISurfaceComposer> sm(getComposerService());
+    return sm->unfreezeDisplay(dpy, flags);
+#endif//MTK_HARDWARE
 }
 
 // ----------------------------------------------------------------------------
@@ -613,6 +627,5 @@ uint32_t ScreenshotClient::getStride() const {
 size_t ScreenshotClient::getSize() const {
     return mHeap->getSize();
 }
-
 // ----------------------------------------------------------------------------
 }; // namespace android

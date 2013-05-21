@@ -38,6 +38,12 @@ LOCAL_CFLAGS += -DQCOM_HDMI_OUT
 endif
 endif
 
+ifeq ($(strip $(BOARD_USES_MTK_HARDWARE)),true)
+LOCAL_STATIC_LIBRARIES += libgui-mtk
+
+LOCAL_SHARED_LIBRARIES += libmhalmdp
+endif
+
 LOCAL_MODULE:= libgui
 
 ifeq ($(TARGET_BOARD_PLATFORM), tegra)

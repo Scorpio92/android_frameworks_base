@@ -46,6 +46,9 @@ enum {
 #ifdef QCOM_HARDWARE
     PERFORM_QCOM_OPERATION,
 #endif
+#ifdef MTK_HARDWARE
+    SET_S3DOFFSET,
+#endif//MTK_HARDWARE
 };
 
 
@@ -219,6 +222,20 @@ public:
         result = reply.readInt32();
         return result;
     }
+
+#ifdef MTK_HARDWARE
+    virtual status_t setS3DOffset(int32_t offset) {
+        Parcel data, reply;
+        data.writeInterfaceToken(ISurfaceTexture::getInterfaceDescriptor());
+        data.writeInt32(offset);
+        status_t result = remote()->transact(SET_S3DOFFSET, data, &reply);
+        if (result != NO_ERROR) {
+            return result;
+        }
+        result = reply.readInt32();
+        return result;
+    }
+#endif//MTK_HARDWARE
 
 #ifdef QCOM_HARDWARE
     virtual status_t performQcomOperation(int operation, int arg1, int arg2, int arg3) {

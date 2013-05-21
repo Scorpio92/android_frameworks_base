@@ -75,7 +75,6 @@ public:
         eLayerFilter        = 0x08,
         eLayerBlurFreeze    = 0x10
     };
-
     enum {
         eOrientationDefault     = 0,
         eOrientation90          = 1,
@@ -109,6 +108,11 @@ public:
     /* open/close transactions. requires ACCESS_SURFACE_FLINGER permission */
     virtual void setTransactionState(const Vector<ComposerState>& state,
             int orientation, uint32_t flags) = 0;
+
+#ifdef MTK_HARDWARE
+    virtual status_t freezeDisplay(DisplayID dpy, uint32_t flags) = 0;
+    virtual status_t unfreezeDisplay(DisplayID dpy, uint32_t flags) = 0;
+#endif//MTK_HARDWARE
 
     /* signal that we're done booting.
      * Requires ACCESS_SURFACE_FLINGER permission
@@ -157,6 +161,10 @@ public:
         GET_CBLK,
         SET_TRANSACTION_STATE,
         SET_ORIENTATION,
+#ifdef MTK_HARDWARE
+        FREEZE_DISPLAY,
+        UNFREEZE_DISPLAY,        
+#endif//MTK_HARDWARE
         CAPTURE_SCREEN,
         TURN_ELECTRON_BEAM_OFF,
         TURN_ELECTRON_BEAM_ON,

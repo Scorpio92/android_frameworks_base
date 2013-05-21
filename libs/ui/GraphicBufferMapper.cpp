@@ -27,12 +27,21 @@
 
 #include <hardware/gralloc.h>
 
+#ifdef MTK_HARDWARE
+#include <utils/String8.h>
+#include <cutils/properties.h>
+#endif//MTK_HARDWARE
 
 namespace android {
 // ---------------------------------------------------------------------------
 
 ANDROID_SINGLETON_STATIC_INSTANCE( GraphicBufferMapper )
 
+#ifdef MTK_HARDWARE
+Mutex GraphicBufferMapper::sLock;
+KeyedVector<buffer_handle_t,
+    GraphicBufferMapper::reg_rec_t> GraphicBufferMapper::sRegList;
+#endif//MTK_HARDWARE
 GraphicBufferMapper::GraphicBufferMapper()
     : mAllocMod(0)
 {
@@ -63,6 +72,13 @@ status_t GraphicBufferMapper::unregisterBuffer(buffer_handle_t handle)
 
     LOGW_IF(err, "unregisterBuffer(%p) failed %d (%s)",
             handle, err, strerror(-err));
+#ifdef MTK_HARDWARE
+    if (err == NO_ERROR) {
+        Mutex::Autolock _l(sLock);
+        KeyedVector<buffer_handle_t, reg_rec_t>& list(sRegList);
+        list.removeItem(handle);
+    }
+#endif//MTK_HARDWARE
     return err;
 }
 
@@ -101,6 +117,30 @@ status_t GraphicBufferMapper::unlock(buffer_handle_t handle)
     LOGW_IF(err, "unlock(...) failed %d (%s)", err, strerror(-err));
     return err;
 }
+#ifdef MTK_HARDWARE
+status_t GraphicBufferMapper::registerBuffer(buffer_handle_t handle,
+    int w, int h, int stride, int format, int usage)
+{
+    Mutex::Autolock _l(sLock);
+    
+    KeyedVector<buffer_handle_t, reg_rec_t>& list(sRegList);
+    int bpp = bytesPerPixel(format);
+    if (bpp < 0) {
+        // probably a HAL custom format. in any case, we don't know
+        // what its pixel size is.
+        bpp = 0;
+    }
+    reg_rec_t rec;
+    rec.w = w;
+    rec.h = h;
+    rec.s = stride;
+    rec.format = format;
+    rec.usage = usage;
+    rec.size = h * stride * bpp;
+    list.add(handle, rec);   
+    return NO_ERROR;
+}
+#endif//MTK_HARDWARE
 
 #ifdef EXYNOS4210_ENHANCEMENTS
 status_t GraphicBufferMapper::getphys(buffer_handle_t handle, void** paddr)
