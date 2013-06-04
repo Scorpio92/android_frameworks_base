@@ -557,7 +557,7 @@ status_t SurfaceComposerClient::freezeDisplay(DisplayID dpy, uint32_t flags)
 
 status_t SurfaceComposerClient::unfreezeDisplay(DisplayID dpy, uint32_t flags)
 {
-#ifdef MTK_HARDWARE
+#ifndef MTK_HARDWARE
     // This has been made a no-op because it can cause Gralloc buffer deadlocks.
     return NO_ERROR;
 #else
