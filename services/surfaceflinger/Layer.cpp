@@ -725,9 +725,9 @@ void Layer::unlockPageFlip(
 //    bufferDirty = !dirtyRegion.isEmpty();
 //#endif//MTK_HARDWARE
     if (!dirtyRegion.isEmpty()) {
-#ifndef MTK_HARDWARE
-        firstBufferCount++;
-#endif//MTK_HARDWARE
+//#ifdef MTK_HARDWARE
+//        firstBufferCount++;
+//#endif//MTK_HARDWARE
         mPostedDirtyRegion.clear();
         // The dirty region is given in the layer's coordinate space
         // transform the dirty region by the surface's transformation
