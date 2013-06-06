@@ -326,9 +326,9 @@ return ret;
 #endif
 
 #ifdef MTK_HARDWARE
-status_t HWComposer::bypassGL()
+status_t HWComposer::bypassGL() const
 {
-    return mHwc.opengl_bypass(); 
+    return mHwc->opengl_bypass(); 
 }
 #endif//MTK_HARDWARE
 

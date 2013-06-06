@@ -78,9 +78,9 @@ Layer::Layer(SurfaceFlinger* flinger,
 #ifdef QCOM_HARDWARE
     updateLayerQcomFlags(LAYER_UPDATE_STATUS, true, mLayerQcomFlags);
 #endif
-#ifdef MTK_HARDWARE
-    firstBufferCount = 0;
-#endif//MTK_HARDWARE
+//#ifdef MTK_HARDWARE
+//    firstBufferCount = 0;
+//#endif//MTK_HARDWARE
 }
 
 void Layer::onFirstRef()
@@ -107,7 +107,7 @@ void Layer::onFirstRef()
     mSurfaceTexture->setBufferCountServer(2);
 #endif
 #ifdef MTK_HARDWARE
-mSurfaceTexture->setHWC(&(graphicPlane(0).displayHardware().getHwComposer()));
+    mSurfaceTexture->setHWC(&(graphicPlane(0).displayHardware().getHwComposer()));
 #endif//MTK_HARDWARE
 }
 
@@ -323,10 +323,10 @@ void Layer::setPerFrameData(hwc_layer_t* hwcl) {
         //hwcl->flagsEx = mDrawingState.flagsEx;
         //hwcl->bufferTransform = mSurfaceTexture->getCurrentTransform();
 
-        if (bufferDirty || firstBufferCount <= 1 || contentDirty)
-            hwcl->flags |= HWC_DIRTY_LAYER;
-        else
-            hwcl->flags &= ~HWC_DIRTY_LAYER;
+        //if (bufferDirty || firstBufferCount <= 1 || contentDirty)
+        //    hwcl->flags |= HWC_DIRTY_LAYER;
+        //else
+        //    hwcl->flags &= ~HWC_DIRTY_LAYER;
     }
 #endif//MTK_HARDWARE
 #ifdef QCOM_HARDWARE
@@ -721,9 +721,9 @@ void Layer::unlockPageFlip(
         const Transform& planeTransform, Region& outDirtyRegion)
 {
     Region dirtyRegion(mPostedDirtyRegion);
-#ifdef MTK_HARDWARE
-    bufferDirty = !dirtyRegion.isEmpty();
-#endif//MTK_HARDWARE
+//#ifdef MTK_HARDWARE
+//    bufferDirty = !dirtyRegion.isEmpty();
+//#endif//MTK_HARDWARE
     if (!dirtyRegion.isEmpty()) {
 #ifndef MTK_HARDWARE
         firstBufferCount++;

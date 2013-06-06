@@ -79,7 +79,28 @@ void LayerDim::onDraw(const Region& clip) const
 void LayerDim::setGeometry(hwc_layer_t* hwcl)
 {
     LayerBase::setGeometry(hwcl);
-    const DisplayHardware& hw(graphicPlane(0).displayHardware());
+    hwcl->flags &= ~HWC_DIM_LAYER;
+    HWComposer& hwc(graphicPlane(0).displayHardware().getHwComposer());
+    const State& s(drawingState());
+
+    hwcl->dimColor = s.alpha;
+
+    if (s.alpha != 0xFF)
+    {
+        hwcl->blending = HWC_BLENDING_PREMULT;
+    }
+    const Transform tr(mTransform);
+    const uint32_t finalTransform = tr.getOrientation();
+
+    hwcl->transform = finalTransform;
+    float *m = hwcl->transformMatrix;
+    for (int i = 0, j = 0; i < 9; i += 3, j++) {
+        m[i + 0] = tr[0][j];
+        m[i + 1] = tr[1][j];
+        m[i + 2] = tr[2][j];
+    }
+
+
 
 }
 #endif//MTK_HARDWARE
