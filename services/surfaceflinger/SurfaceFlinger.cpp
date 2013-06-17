@@ -471,20 +471,21 @@ status_t SurfaceFlinger::readyToRun()
      */
 
     // start boot animation
-#ifndef MTK_HARDWARE
     property_set("ctl.start", "bootanim");
-#else
-    mBootAnimationEnabled = isEnableBootAnim();
-    LOG(LOG_INFO, "boot", "mBootAnimationEnabled = %d", mBootAnimationEnabled);
-    if (true == mBootAnimationEnabled) {
-        // start boot animation here
-        property_set("ctl.start", "bootanim");
-        bootProf(1);
-    } else {
-        LOGI("[SurfaceFlinger] skip boot animation!");
-    }
-
-#endif//MTK_HARDWARE
+//#ifndef MTK_HARDWARE
+//    property_set("ctl.start", "bootanim");
+//#else
+//    mBootAnimationEnabled = isEnableBootAnim();
+//    LOG(LOG_INFO, "boot", "mBootAnimationEnabled = %d", mBootAnimationEnabled);
+//    if (true == mBootAnimationEnabled) {
+//        // start boot animation here
+//        property_set("ctl.start", "bootanim");
+//        bootProf(1);
+//    } else {
+//        LOGI("[SurfaceFlinger] skip boot animation!");
+//    }
+//
+//#endif//MTK_HARDWARE
 
     return NO_ERROR;
 }
